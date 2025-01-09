@@ -13,5 +13,8 @@ The planned stages for the project:
  The big plan is to create a container that has the server, the uri of the sql server, and the dataset, and then allowing to upload that container into a service such as google cloud run, 
 and have clients from diffrent pcs connect to the server and running the tests, and even having the ability to run a manual client on top of a gpu cluster with a big test request
 
+
+
+Current design for the sql database:
 ![SiteDataDiagram-DL database drawio(2)](https://github.com/user-attachments/assets/5ce8542e-8eed-4e5b-bdcf-93889bbf5ed7)
 
