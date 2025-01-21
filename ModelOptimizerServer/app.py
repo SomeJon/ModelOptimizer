@@ -1,43 +1,13 @@
 from flask import Flask, request, jsonify
-from dotenv import load_dotenv
-import pymysql
-import os
 
-from utils.utils import format_as_aligned_table
+from utils.utils import *
 
-load_dotenv()
 
 app = Flask(__name__)
-
-def get_db_connection():
-    connection = pymysql.connect(
-        host=os.getenv("DB_HOST"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME"),
-        port=3306
-    )
-    return connection
 
 @app.route('/')
 def hello_world():
     return 'Hello World!'
-
-@app.route('/report/', methods=['POST'])
-def report_results():
-    try:
-        data = request.get_json()
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        cursor.execute("""
-            INSERT INTO test (exp_id, score, duration, date, hardware_config)
-            VALUES (%s, %s, %s, NOW(), %s)
-        """, (data['exp_id'], data['score'], data['duration'], data['hardware_config']))
-        connection.commit()
-        connection.close()
-        return "Test results reported successfully!", 200
-    except Exception as e:
-        return f"Error: {str(e)}", 500
 
 
 # SQL execution endpoint
@@ -56,7 +26,7 @@ def execute_sql():
             return jsonify({"error": "Query type not allowed."}), 403
 
         # Execute the query
-        connection = get_db_connection()
+        connection = DB.get_connection()
         cursor = connection.cursor()
         cursor.execute(sql_query)
         rows = cursor.fetchall()
@@ -72,6 +42,7 @@ def execute_sql():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run()
