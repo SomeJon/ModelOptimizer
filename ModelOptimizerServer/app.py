@@ -51,6 +51,7 @@ def generate_request():
     Decides between generating first-generation tests or tests based on references.
     """
     try:
+
         # Retrieve query parameters
         num = int(request.args.get('num'))
         dataset_id = int(request.args.get('dataset_id'))
@@ -59,15 +60,13 @@ def generate_request():
 
         # Generate the base JSON
         request_json = create_request_json(num, dataset_id, focus, num_of_based)
-
-        # Check if reference_experiments is empty
-        if not request_json.get("reference_experiments"):
+        request_data = json.loads(request_json)  # Convert the JSON string back to a dictionary
+        if not request_data.get("reference_experiments"):
             # Call first_gen for initial generation
-            new_experiments = first_gen(request_json, num, dataset_id)
+            new_experiments = first_gen(request_data, num, dataset_id)
         else:
             # Call gen_request for normal generation
-            new_experiments = send_openai_request(request_json)
-
+            new_experiments = send_openai_request(request_data)
         return jsonify({
             "success": True,
             "generated_experiments": new_experiments
@@ -92,24 +91,31 @@ def add_dataset():
         data = request.get_json()
         name = data['name']  # Name of the dataset
         location = data['location']  # File path or cloud location
-        size = data['size']  # Size of the dataset (e.g., in MB/GB)
-        shape = data['shape']  # Shape of the dataset (e.g., (28, 28))
+        train_samples = data['train_samples']  # Number of training samples
+        test_samples = data['test_samples']  # Number of testing samples
+        shape = data['shape']  # Shape of the dataset
         description = data['description']  # Description of the dataset
+
 
         # Insert dataset into the database
         connection = DB.get_connection()
         cursor = connection.cursor()
         query = """
-            INSERT INTO processed_dataset_data (name, location, size, shape, description)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO processed_dataset_data (name, location, train_samples, test_samples, shape, description)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        cursor.execute(query, (name, location, size, shape, description))
+        cursor.execute(query, (name, location, train_samples, test_samples, shape, description))
         connection.commit()
+
+        app.logger.info(f"Dataset '{name}' successfully added to the database.")
 
         return jsonify({"success": True, "message": "Dataset added successfully!"})
 
     except Exception as e:
+        app.logger.error(f"Error adding dataset: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
+
+
 
 
 

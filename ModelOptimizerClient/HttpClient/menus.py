@@ -1,5 +1,7 @@
 import os
 
+from HttpClient.methods import *
+
 
 def main_menu():
     """
@@ -22,6 +24,7 @@ Main Menu:
 6. Execute Loaded Tests
 7. Upload Test Results to Server
 8. SQL Query to Server
+9. View datasets on the server
 0. Exit
 -------------------------------------
         """)
@@ -43,12 +46,15 @@ Main Menu:
             upload_test_results()
         elif choice == "8":
             sql_query_to_server()
+        elif choice == "9":
+            view_datasets_on_server()
         elif choice == "0":
             print("Exiting... Goodbye!")
             break
         else:
             print("Invalid choice. Please try again.")
-            input("Press Enter to continue...")
+
+        input("Click any button to continue...")
 
 def fetch_tests_menu():
     """
@@ -82,30 +88,6 @@ def fetch_tests_menu():
             print("Invalid choice. Please try again.")
             input("Press Enter to continue...")
 
-def generate_new_tests():
-    """
-    Generate new tests by interacting with the server.
-    """
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print("""
-=====================================
-        GENERATE NEW TESTS
-=====================================
-    """)
-    # Simulating available datasets
-    print("Available Datasets:")
-    print("1. Dataset ID: 101 - MNIST Dataset")
-    print("2. Dataset ID: 102 - CIFAR-10 Dataset")
-    print("3. Dataset ID: 103 - Custom Dataset")
-    print("-------------------------------------")
-
-    dataset_id = input("Enter the Dataset ID: ").strip()
-    focus = input("Enter a focus for the tests (e.g., 'Explore simple models'): ").strip()
-    num = input("Enter the number of tests to generate: ").strip()
-
-    print(f"\nGenerating {num} new tests for Dataset ID {dataset_id} with focus: '{focus}'.")
-    # Placeholder for server request
-    input("Request sent successfully! Press Enter to return to the main menu...")
 
 def check_pending_tests():
     """
@@ -116,25 +98,6 @@ def check_pending_tests():
     # Placeholder for server request
     input("Pending tests: [placeholder result]. Press Enter to return to the main menu...")
 
-def load_dataset_to_server():
-    """
-    Load dataset information into the server.
-    """
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print("""
-=====================================
-       LOAD DATASET TO SERVER
-=====================================
-    """)
-    name = input("Enter the Dataset Name: ").strip()
-    location = input("Enter the File Location: ").strip()
-    size = input("Enter the Dataset Size (MB): ").strip()
-    shape = input("Enter the Dataset Shape (e.g., '(28, 28)'): ").strip()
-    description = input("Enter the Dataset Description: ").strip()
-
-    print(f"\nUploading dataset '{name}' to the server...")
-    # Placeholder for server request
-    input("Dataset uploaded successfully! Press Enter to return to the main menu...")
 
 def view_local_test_results():
     """
@@ -175,6 +138,7 @@ def execute_loaded_tests():
         print("Invalid choice. Please try again.")
         input("Press Enter to continue...")
 
+
 def upload_test_results():
     """
     Upload local test results to the server.
@@ -183,6 +147,7 @@ def upload_test_results():
     print("Uploading test results to the server...")
     # Placeholder for server upload
     input("Test results uploaded successfully! Press Enter to return to the main menu...")
+
 
 def sql_query_to_server():
     """
@@ -220,3 +185,5 @@ def fetch_tests_manual():
 
 # Entry Point
 
+if __name__ == "__main__":
+    main_menu()

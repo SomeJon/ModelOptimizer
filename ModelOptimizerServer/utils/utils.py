@@ -1,7 +1,7 @@
-from utils.DB import DB
 import pymysql
 import json
 
+from utils.DB import DB
 from utils.openai import send_openai_request
 
 
@@ -70,6 +70,7 @@ def create_request_json(num, dataset_id, focus, num_of_based):
                     "batch_size": row["batch_size"],
                     "weight_decay": row["weight_decay"],
                     "learning_rate": row["learning_rate"],
+                    "thresh": row["thresh"],  # Add threshold value
                     "layers": []
                 }
             reference_experiments[exp_id]["layers"].append({
@@ -80,34 +81,38 @@ def create_request_json(num, dataset_id, focus, num_of_based):
                 "input": row["input"],
                 "output": row["output"],
                 "dropout_rate": row["dropout_rate"],
-                "meta_data": json.loads(row["meta_data"]) if row["meta_data"] else {}
+                "layer_fields": json.loads(row["layer_fields"]) if row["layer_fields"] else {}
             })
 
         # Fetch options
         cursor.execute("SELECT loss_fn FROM loss_fn")
         loss_fn_options = [row["loss_fn"] for row in cursor.fetchall()]
 
-        cursor.execute("SELECT optimization FROM optimization")
-        optimization_options = [row["optimization"] for row in cursor.fetchall()]
+        cursor.execute("SELECT optimization, optimization_fields FROM optimization")
+        optimization_fields = {
+            row["optimization"]: json.loads(row["optimization_fields"]) if row["optimization_fields"] else {}
+            for row in cursor.fetchall()
+        }
 
         cursor.execute("SELECT normalization FROM normalization")
         normalization_options = [row["normalization"] for row in cursor.fetchall()]
 
-        cursor.execute("SELECT layer_type, meta_data FROM layer_type")
-        layer_types = {row["layer_type"]: json.loads(row["meta_data"]) for row in cursor.fetchall()}
+        cursor.execute("SELECT layer_type, layer_fields FROM layer_type")
+        layer_types = {row["layer_type"]: json.loads(row["layer_fields"]) for row in cursor.fetchall()}
 
         # Build the JSON
         request_json = {
             "instructions": {
                 "count": num,
                 "focus": focus,
-                "note": "In the result jsons, replace exp_id with based_on_id."
+                "note": "In the result JSONs, replace exp_id with based_on_id."
             },
             "options": {
                 "loss_fn": loss_fn_options,
-                "optimization": optimization_options,
+                "optimization": list(optimization_fields.keys()),
                 "normalization": normalization_options,
-                "layer_types": layer_types
+                "layer_types": layer_types,
+                "optimization_fields": optimization_fields  # Explicit metadata for optimizations
             },
             "reference_experiments": list(reference_experiments.values())
         }
@@ -123,15 +128,6 @@ def create_request_json(num, dataset_id, focus, num_of_based):
 
 
 def first_gen(request_json, num, dataset_id):
-    """
-    Handles the first generation of tests when no reference experiments exist.
-    Fetches dataset details and modifies the focus accordingly.
-
-    :param request_json: The base JSON created by create_request_json.
-    :param num: Number of experiments to generate.
-    :param dataset_id: The ID of the dataset for which tests are generated.
-    :return: The OpenAI API response.
-    """
     connection = None
     try:
         # Establish database connection
@@ -140,7 +136,7 @@ def first_gen(request_json, num, dataset_id):
 
         # Fetch dataset details
         query = """
-            SELECT name, description, size, shape
+            SELECT name, description, train_samples, test_samples, shape
             FROM processed_dataset_data
             WHERE dataset_id = %s
         """
@@ -153,8 +149,17 @@ def first_gen(request_json, num, dataset_id):
         # Extract dataset details
         dataset_name = dataset_details["name"]
         dataset_description = dataset_details["description"]
-        dataset_size = dataset_details["size"]
+        train_samples = dataset_details["train_samples"]
+        test_samples = dataset_details["test_samples"]
         dataset_shape = dataset_details["shape"]
+
+        # Attempt to parse shape as JSON if applicable
+        try:
+            parsed_shape = json.loads(dataset_shape) if isinstance(dataset_shape,
+                                                                   str) and dataset_shape.strip().startswith(
+                '{') else dataset_shape
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Error parsing dataset_shape: {dataset_shape} - {e}")
 
         # Modify the focus in the request_json
         request_json["instructions"]["focus"] += (
@@ -162,10 +167,20 @@ def first_gen(request_json, num, dataset_id):
             f"Dataset Details:\n"
             f"- Name: {dataset_name}\n"
             f"- Description: {dataset_description}\n"
-            f"- Size: {dataset_size} MB\n"
+            f"- Train Samples: {train_samples}\n"
+            f"- Test Samples: {test_samples}\n"
             f"- Shape: {dataset_shape}\n"
             f"Included as a reference is a template of how the returning JSONs should look."
         )
+
+        # Fetch optimization metadata
+        cursor.execute("SELECT optimization, optimization_fields FROM optimization")
+        optimizations = {
+            row["optimization"]: json.loads(row["optimization_fields"]) if row["optimization_fields"]
+                                                                           and row[
+                                                                               "optimization_fields"].strip() else {}
+            for row in cursor.fetchall()
+        }
 
         # Create an example JSON template
         example_json = {
@@ -178,13 +193,22 @@ def first_gen(request_json, num, dataset_id):
             "learning_rate": 0.001,
             "layers": [
                 {
+                    "layer_type": "Input",
+                    "activation_fn": None,
+                    "weight_initiations": None,
+                    "input": None,
+                    "output": None,
+                    "dropout_rate": None,
+                    "layer_fields": {"input_shape": parsed_shape}
+                },
+                {
                     "layer_type": "Dense",
                     "activation_fn": "ReLU",
                     "weight_initiations": "Xavier Initialization",
                     "input": 128,
                     "output": 64,
                     "dropout_rate": None,
-                    "meta_data": {"units": 64}
+                    "layer_fields": {"units": 64}
                 },
                 {
                     "layer_type": "Output",
@@ -193,17 +217,21 @@ def first_gen(request_json, num, dataset_id):
                     "input": 64,
                     "output": 10,
                     "dropout_rate": None,
-                    "meta_data": {"output_shape": [10]}
+                    "layer_fields": {"output_shape": [10]}
                 }
-            ]
+            ],
+            "optimization_fields": {
+                    "momentum": 0.5
+                }
         }
 
         # Add example JSON to the reference section
+        if "reference_experiments" not in request_json:
+            request_json["reference_experiments"] = []
         request_json["reference_experiments"].append(example_json)
 
         # Send to OpenAI API
         openai_response = send_openai_request(request_json)
-
         return openai_response
 
     except Exception as e:
