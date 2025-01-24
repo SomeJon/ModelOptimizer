@@ -170,14 +170,30 @@ def generate_new_tests():
 
         if confirm != "1":
             print("Operation cancelled.")
-            input("Press Enter to return to the main menu...")
             return
+
+        # Choose the model to use
+        print("\nChoose the model to use:")
+        print("1. GPT-4 Turbo (default)")
+        print("2. GPT-3.5 Turbo")
+        model_choice = input("Enter your choice (1 or 2): ").strip()
+
+        if model_choice == "2":
+            model = "gpt-3.5-turbo"
+        else:
+            model = "gpt-4-turbo"  # Default to GPT-4 Turbo
 
         # Send the request to the server
         print("\nSending request to the server...")
         response = requests.post(
             f"http://{SERVER_URL}/gen",
-            params={"num": num, "dataset_id": dataset_id, "focus": focus, "num_of_based": num_of_based}
+            params={
+                "num": num,
+                "dataset_id": dataset_id,
+                "focus": focus,
+                "num_of_based": num_of_based,
+                "model": model
+            }
         )
 
         # Handle server response
@@ -193,3 +209,4 @@ def generate_new_tests():
 
     except Exception as e:
         print(f"An error occurred: {e}")
+

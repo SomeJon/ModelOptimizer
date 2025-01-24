@@ -57,16 +57,17 @@ def generate_request():
         dataset_id = int(request.args.get('dataset_id'))
         focus = request.args.get('focus')
         num_of_based = int(request.args.get('num_of_based'))
+        model = request.args.get('model', 'gpt-4-turbo')  # Default to gpt-4-turbo if not specified
 
         # Generate the base JSON
         request_json = create_request_json(num, dataset_id, focus, num_of_based)
         request_data = json.loads(request_json)  # Convert the JSON string back to a dictionary
         if not request_data.get("reference_experiments"):
             # Call first_gen for initial generation
-            new_experiments = first_gen(request_data, num, dataset_id)
+            new_experiments = first_gen(request_data, num, dataset_id, model)
         else:
             # Call gen_request for normal generation
-            new_experiments = send_openai_request(request_data)
+            new_experiments = send_openai_request(request_data, model)
         return jsonify({
             "success": True,
             "generated_experiments": new_experiments

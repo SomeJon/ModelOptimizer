@@ -2,7 +2,7 @@ import json
 from utils.CustomChatCompletion import CustomChatCompletion
 
 
-def send_openai_request(request_json):
+def send_openai_request(request_json, model):
     """
     Sends requests to OpenAI API for each reference experiment in the input JSON.
 
@@ -43,7 +43,7 @@ def send_openai_request(request_json):
                 try:
                     print("Sending request to OpenAI...")
                     response = CustomChatCompletion.create(
-                        model="gpt-3.5-turbo",
+                        model=model,
                         messages=[
                             {
                                 "role": "system",

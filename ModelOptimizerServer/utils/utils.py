@@ -127,7 +127,7 @@ def create_request_json(num, dataset_id, focus, num_of_based):
             connection.close()
 
 
-def first_gen(request_json, num, dataset_id):
+def first_gen(request_json, num, dataset_id, model):
     connection = None
     try:
         # Establish database connection
@@ -231,7 +231,7 @@ def first_gen(request_json, num, dataset_id):
         request_json["reference_experiments"].append(example_json)
 
         # Send to OpenAI API
-        openai_response = send_openai_request(request_json)
+        openai_response = send_openai_request(request_json, model)
         return openai_response
 
     except Exception as e:
