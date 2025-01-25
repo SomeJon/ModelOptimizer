@@ -1,83 +1,261 @@
 import json
 
-
-def compact_to_json(compact_str):
+def json_to_compact(data: dict) -> str:
     """
-    Converts a compact string representation of an experiment into a JSON object.
+    Convert a JSON-like dictionary into a compact string format:
+      based_on_id:...,loss_fn:...,optimization:...,...
+      layers: layer1|layer2|...
+      optimization_fields: key1=val1+key2=val2+...
+    Each layer has comma-separated fields, including "layer_fields" plus-separated dict.
     """
-    try:
-        parts = compact_str.split(";")
-        experiment = {}
 
-        for part in parts:
-            if ":" not in part and "=" not in part:  # Accept both ':' and '='
-                raise ValueError(f"Malformed part in compact string: {part}")
+    output_parts = []
 
-            # Check if it's a key-value pair using ':' or '='
-            delimiter = ":" if ":" in part else "="
-            key, value = part.split(delimiter, 1)
+    # 1. Top-level fields (use the order you want):
+    top_level_order = [
+        "based_on_id",
+        "loss_fn",
+        "optimization",
+        "normalization",
+        "batch_size",
+        "weight_decay",
+        "learning_rate"
+    ]
 
-            if key == "layers":
-                layers = []
-                for layer in value.split("|"):
-                    if "{" not in layer or "}" not in layer:
-                        raise ValueError(f"Malformed layer definition: {layer}")
-                    layer_type, fields = layer.split("{", 1)
-                    fields = fields.rstrip("}")
-                    layer_data = {"layer_type": layer_type.strip()}
-                    for field in fields.split("+"):
-                        if "=" not in field:
-                            raise ValueError(f"Malformed field in layer: {field}")
-                        k, v = field.split("=", 1)
-                        v = v.strip().strip("'").strip('"')
-                        if v.replace('.', '', 1).isdigit():
-                            v = float(v) if '.' in v else int(v)
-                        elif v.startswith("(") and v.endswith(")"):
-                            v = tuple(map(int, v.strip("()").split(",")))
-                        elif v.startswith("[") and v.endswith("]"):
-                            v = json.loads(v)
-                        layer_data[k.strip()] = v
-                    layers.append(layer_data)
-                experiment["layers"] = layers
-            elif key == "optimization_fields":
-                fields = value.split("+")
-                experiment[key] = {
-                    k.strip(): float(v.strip())
-                    for field in fields
-                    for k, v in [field.split("=", 1)]
-                }
-            else:
-                value = value.strip().strip("'").strip('"')
-                if value == "null":
-                    experiment[key] = None
-                elif value.replace('.', '', 1).isdigit():
-                    experiment[key] = float(value) if '.' in value else int(value)
+    # Append these fields if present
+    for key in top_level_order:
+        if key in data:
+            # Convert the value to a string
+            output_parts.append(f"{key}:{data[key]}")
+
+    # 2. layers
+    if "layers" in data and isinstance(data["layers"], list):
+        layer_strs = []
+        for layer in data["layers"]:
+            layer_items = []
+            for k, v in layer.items():
+                if k == "layer_fields" and isinstance(v, dict):
+                    # plus-separated
+                    plus_list = []
+                    # We won't parse or transform sub-values, everything as string
+                    for subk, subv in v.items():
+                        plus_list.append(f"{subk}={subv}")
+                    layer_items.append(f"layer_fields={'+'.join(plus_list)}")
                 else:
-                    experiment[key] = value
+                    # Everything else is key=value, as string
+                    layer_items.append(f"{k}={v}")
+            # comma-join for each layer
+            layer_strs.append(",".join(layer_items))
 
-        return experiment
-    except Exception as e:
-        raise ValueError(f"Error in compact_to_json: {e}, Input: {compact_str}")
+        # Join multiple layers with '|'
+        layers_compact_str = "|".join(layer_strs)
+        output_parts.append(f"layers:{layers_compact_str}")
+
+    # 3. optimization_fields
+    if "optimization_fields" in data and isinstance(data["optimization_fields"], dict):
+        opt_items = []
+        for k, v in data["optimization_fields"].items():
+            opt_items.append(f"{k}={v}")
+        opt_compact_str = "+".join(opt_items)
+        output_parts.append(f"optimization_fields:{opt_compact_str}")
+
+    # 4. Join everything with ';'
+    return ";".join(output_parts)
+
+
+def compact_to_json(compact_str: str) -> dict:
+    """
+    Parse the compact string format back into a Python dict, without
+    splitting on commas inside parentheses.
+
+    Example:
+      based_on_id:0;loss_fn:Cross Entropy;...;layers:layer_type=Input,input=(32,32,3),...
+    """
+    def parse_value(s: str):
+        s = s.strip()
+        # Optionally turn "None" into actual None:
+        if s == "None":
+            return "None"  # or return None
+        # Try numeric:
+        try:
+            return int(s)
+        except ValueError:
+            pass
+        try:
+            return float(s)
+        except ValueError:
+            pass
+        # Fallback: keep string
+        return s
+
+    def split_on_commas_outside_parens(line: str):
+        """
+        Splits `line` by commas that are NOT inside parentheses.
+        E.g., "input=(32,32,3),output=(32,32,3)" -> ["input=(32,32,3)", "output=(32,32,3)"]
+        """
+        result = []
+        current = []
+        paren_depth = 0
+
+        for char in line:
+            if char == '(':
+                paren_depth += 1
+                current.append(char)
+            elif char == ')':
+                paren_depth = max(paren_depth - 1, 0)
+                current.append(char)
+            elif char == ',' and paren_depth == 0:
+                # We split here
+                result.append("".join(current).strip())
+                current = []
+            else:
+                current.append(char)
+
+        # Append any leftover piece
+        if current:
+            result.append("".join(current).strip())
+
+        return result
+
+    result = {}
+    # Split top-level by ';'
+    top_fields = [fld.strip() for fld in compact_str.split(";") if fld.strip()]
+
+    for fld in top_fields:
+        if ":" not in fld:
+            continue
+        key, val = fld.split(":", 1)
+        key = key.strip()
+        val = val.strip()
+
+        if key == "layers":
+            # e.g. "layer_type=Input,input=(32,32,3)...|layer_type=CNN,input=(32,32,3)..."
+            layer_specs = val.split("|")
+            layers_list = []
+
+            for layer_str in layer_specs:
+                layer_dict = {}
+                # Instead of splitting directly on ',', we do:
+                sub_fields = split_on_commas_outside_parens(layer_str)
+
+                for sf in sub_fields:
+                    if "=" not in sf:
+                        continue
+                    sub_key, sub_val = sf.split("=", 1)
+                    sub_key = sub_key.strip()
+                    sub_val = sub_val.strip()
+
+                    if sub_key == "layer_fields":
+                        # plus-separated
+                        lf_dict = {}
+                        for pair in sub_val.split("+"):
+                            if "=" in pair:
+                                pk, pv = pair.split("=", 1)
+                                lf_dict[pk.strip()] = parse_value(pv.strip())
+                        layer_dict["layer_fields"] = lf_dict
+                    else:
+                        layer_dict[sub_key] = parse_value(sub_val)
+
+                layers_list.append(layer_dict)
+
+            result["layers"] = layers_list
+
+        elif key == "optimization_fields":
+            # plus-separated
+            opt_dict = {}
+            for pair in val.split("+"):
+                if "=" in pair:
+                    pk, pv = pair.split("=", 1)
+                    opt_dict[pk.strip()] = parse_value(pv.strip())
+            result[key] = opt_dict
+
+        else:
+            # normal top-level
+            result[key] = parse_value(val)
+
+    return result
 
 
 
-# Example compact response with updated format
-response = """
-based_on_id:null;loss_fn:Binary Cross Entropy;optimization:SGD;normalization:None;batch_size:32;weight_decay=0.0002;learning_rate:0.002;layers:Input{input_shape='(32, 32, 3)'}|CNN{stride=2+padding=2+in_channels=3+kernel_size=5+out_channels=32}|BatchNorm{epsilon=1e-6+momentum=0.98}|Dropout{rate=0.25}|CNN{stride=1+padding=1+in_channels=32+kernel_size=3+out_channels=64}|Pooling{type='average'+stride=2+pool_size=(2,2)}|BatchNorm{epsilon=1e-6+momentum=0.98}|Dropout{rate=0.35}|Dense{units=128}|BatchNorm{epsilon=1e-6+momentum=0.98}|Dropout{rate=0.45}|Dense{units=256}|BatchNorm{epsilon=1e-6+momentum=0.98}|Output{output_shape=[10]};optimization_fields:momentum=0.8
-based_on_id:0;loss_fn:Mean Squared Error;optimization:SGD;normalization:Normalizer;batch_size:32;weight_decay:0.0002;learning_rate:0.01;layers:Input{input_shape=(32, 32, 3)}|CNN{stride=2+padding=0+in_channels=3+kernel_size=5+out_channels=16}|Dropout{rate=0.4}|Dense{units=64}|Pooling{type=average+stride=2+pool_size=2}|Output{output_shape=[10]};optimization_fields:momentum=0.8
-based_on_id:0;loss_fn:Binary Cross Entropy;optimization:Adam;normalization:MinMaxScaler;batch_size:128;weight_decay:0.0005;learning_rate:0.002;layers:Input{input_shape=(32, 32, 3)}|CNN{stride=1+padding=1+in_channels=3+kernel_size=5+out_channels=64}|BatchNorm{epsilon=1e-5+momentum=0.2}|Pooling{type=max+stride=2+pool_size=2}|Dense{units=256}|Output{output_shape=[10]};optimization_fields:beta1=0.9+beta2=0.999+epsilon=1e-8
-"""
+# -------------------------------------------------------------------
+# Example usage with your sample dictionary:
+if __name__ == "__main__":
+    example_dict = {
+        "based_on_id": 0,  # Indicates the first generation
+        "loss_fn": "Cross Entropy Loss",
+        "optimization": "Adam",
+        "normalization": "StandardScaler",
+        "batch_size": 32,
+        "weight_decay": 0.0001,
+        "learning_rate": 0.001,
+        "layers": [
+            {
+                "layer_type": "Input",
+                "activation_fn": "None",
+                "weight_initiations": "None",
+                "input": "(32, 32, 3)",
+                "output": "(32, 32, 3)",
+                "dropout_rate": "None",
+                "layer_fields": {"input_shape": "(32, 32, 3)"}
+            },
+            {
+                "layer_type": "CNN",
+                "activation_fn": "ReLU",
+                "weight_initiations": "Xavier Initialization",
+                "input": "(32, 32, 3)",
+                "output": "(30, 30, 64)",
+                "dropout_rate": "None",
+                "layer_fields": {
+                    "kernel_size": 3,
+                    "stride": 1,
+                    "padding": 0,
+                    "in_channels": 3,
+                    "out_channels": 64
+                }
+            },
+            {
+                "layer_type": "Dense",
+                "activation_fn": "ReLU",
+                "weight_initiations": "Xavier Initialization",
+                "input": "(57600)",
+                "output": 128,
+                "dropout_rate": "None",
+                "layer_fields": {"units": 128}
+            },
+            {
+                "layer_type": "Output",
+                "activation_fn": "Softmax",
+                "weight_initiations": "Xavier Initialization",
+                "input": 128,
+                "output": 10,
+                "dropout_rate": "None",
+                "layer_fields": {"output_shape": "(10)"}
+            }
+        ],
+        "optimization_fields": {
+            "beta1": 0.9,
+            "beta2": 0.999,
+            "epsilon": 1e-08
+        }
+    }
 
-# Process each line of the response
-parsed_experiments = []
-for line in response.strip().split("\n"):
-    try:
-        parsed_experiment = compact_to_json(line.strip())
-        parsed_experiments.append(parsed_experiment)
-        print(json.dumps(parsed_experiment, indent=2))
-    except ValueError as e:
-        print(f"Error: {e}")
+    print("=== Original Dictionary ===")
+    print(json.dumps(example_dict, indent=2))
 
-# Optionally, save parsed experiments to a JSON file
-with open("parsed_experiments.json", "w") as f:
-    json.dump(parsed_experiments, f, indent=2)
+    # Convert to compact string
+    compact_string = json_to_compact(example_dict)
+    print("\n=== Compact String ===")
+    print(compact_string)
+
+    # Convert back to dict
+    roundtrip_dict = compact_to_json(compact_string)
+
+    print("\n=== Round-Tripped Dictionary ===")
+    print(json.dumps(roundtrip_dict, indent=2))
+
+    # If you want to check they are "the same" ignoring key order:
+    # Compare as Python objects:
+    # (But note: original numeric values are now strings, etc.)
+    # so you'll see differences like "0.0001" vs 0.0001.
+    # If that's acceptable, then the structure + keys + values
+    # are effectively the same in string form.

@@ -1,7 +1,13 @@
 from flask import Flask, request, jsonify
 
 from utils.utils import *
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 
+# Assuming your database is set up with SQLAlchemy
+engine = create_engine('sqlite:///your_database.db')  # Update with your database connection
+Session = sessionmaker(bind=engine)
+session = Session()
 
 app = Flask(__name__)
 
@@ -46,39 +52,36 @@ def execute_sql():
 
 @app.route('/gen', methods=['POST'])
 def generate_request():
-    """
-    Endpoint to create and handle a request JSON for generating tests.
-    Decides between generating first-generation tests or tests based on references.
-    """
     try:
-
         # Retrieve query parameters
         num = int(request.args.get('num'))
         dataset_id = int(request.args.get('dataset_id'))
         focus = request.args.get('focus')
         num_of_based = int(request.args.get('num_of_based'))
-        model = request.args.get('model', 'gpt-4-turbo')  # Default to gpt-4-turbo if not specified
+        model = request.args.get('model', 'gpt-4-turbo')  # default model
 
-        # Generate the base JSON
+        # Prepare the request JSON for generation
         request_json = create_request_json(num, dataset_id, focus, num_of_based)
-        request_data = json.loads(request_json)  # Convert the JSON string back to a dictionary
+        request_data = json.loads(request_json)  # parse to dict
+
+        print("Generated request data:", request_data)
+
+        # If no reference_experiments, do a "first_gen" approach; else normal generation
         if not request_data.get("reference_experiments"):
-            # Call first_gen for initial generation
             new_experiments = first_gen(request_data, num, dataset_id, model)
         else:
-            # Call gen_request for normal generation
             new_experiments = send_openai_request(request_data, model)
+
+        # Insert these experiments into DB
+        inserted_count = insert_experiments_to_db(new_experiments, dataset_id)
+
         return jsonify({
             "success": True,
-            "generated_experiments": new_experiments
+            "message": f"{inserted_count} experiments inserted."
         })
-
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        })
-
+        print("Error in /gen endpoint:", e)
+        return jsonify({"success": False, "error": str(e)})
 
 
 @app.route('/add_dataset', methods=['POST'])

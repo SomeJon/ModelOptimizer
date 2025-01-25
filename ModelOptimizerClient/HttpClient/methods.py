@@ -176,10 +176,14 @@ def generate_new_tests():
         print("\nChoose the model to use:")
         print("1. GPT-4 Turbo (default)")
         print("2. GPT-3.5 Turbo")
-        model_choice = input("Enter your choice (1 or 2): ").strip()
+        print("3. GPT-4")
+        model_choice = input("Enter your choice (1, 2, or 3): ").strip()
 
+        # Set the model based on user choice
         if model_choice == "2":
             model = "gpt-3.5-turbo"
+        elif model_choice == "3":
+            model = "gpt-4"
         else:
             model = "gpt-4-turbo"  # Default to GPT-4 Turbo
 
@@ -198,15 +202,20 @@ def generate_new_tests():
 
         # Handle server response
         if response.status_code == 200:
-            data = response.json()
-            if data.get("success"):
-                print("\nTests generated successfully! Here are the generated experiments:\n")
-                print(json.dumps(data.get("generated_experiments"), indent=2))
-            else:
-                print(f"Error: {data.get('error', 'Unknown error')}")
+            try:
+                data = response.json()
+                if data.get("success"):
+                    message = data.get("message", "Operation completed successfully!")
+                    print(f"\n{message}")
+                else:
+                    print(f"Error: {data.get('error', 'Unknown error')}")
+            except ValueError:
+                # Handle non-JSON response
+                print(f"\nServer Response: {response.text.strip()}")
         else:
             print(f"Server error: {response.text}")
 
     except Exception as e:
         print(f"An error occurred: {e}")
+
 

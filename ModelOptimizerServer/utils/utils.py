@@ -155,9 +155,7 @@ def first_gen(request_json, num, dataset_id, model):
 
         # Attempt to parse shape as JSON if applicable
         try:
-            parsed_shape = json.loads(dataset_shape) if isinstance(dataset_shape,
-                                                                   str) and dataset_shape.strip().startswith(
-                '{') else dataset_shape
+            parsed_shape = json.loads(dataset_shape) if isinstance(dataset_shape, str) and dataset_shape.strip().startswith('{') else dataset_shape
         except json.JSONDecodeError as e:
             raise ValueError(f"Error parsing dataset_shape: {dataset_shape} - {e}")
 
@@ -177,12 +175,11 @@ def first_gen(request_json, num, dataset_id, model):
         cursor.execute("SELECT optimization, optimization_fields FROM optimization")
         optimizations = {
             row["optimization"]: json.loads(row["optimization_fields"]) if row["optimization_fields"]
-                                                                           and row[
-                                                                               "optimization_fields"].strip() else {}
+                                                                           and row["optimization_fields"].strip() else {}
             for row in cursor.fetchall()
         }
 
-        # Create an example JSON template
+        # Create an example JSON template with a CNN layer
         example_json = {
             "based_on_id": 0,  # Indicates the first generation
             "loss_fn": "Cross Entropy Loss",
@@ -194,35 +191,46 @@ def first_gen(request_json, num, dataset_id, model):
             "layers": [
                 {
                     "layer_type": "Input",
-                    "activation_fn": None,
-                    "weight_initiations": None,
-                    "input": None,
-                    "output": None,
-                    "dropout_rate": None,
+                    "activation_fn": "None",
+                    "weight_initiations": "None",
+                    "input": parsed_shape,
+                    "output": parsed_shape,
+                    "dropout_rate": "None",
                     "layer_fields": {"input_shape": parsed_shape}
+                },
+                {
+                    "layer_type": "CNN",
+                    "activation_fn": "ReLU",
+                    "weight_initiations": "Xavier Initialization",
+                    "input": "(32, 32, 3)",
+                    "output": "(30, 30, 64)",
+                    "dropout_rate": "None",
+                    "layer_fields": {"kernel_size": 3, "stride": 1, "padding": 0, "in_channels": 3, "out_channels": 64}
                 },
                 {
                     "layer_type": "Dense",
                     "activation_fn": "ReLU",
                     "weight_initiations": "Xavier Initialization",
-                    "input": 128,
-                    "output": 64,
-                    "dropout_rate": None,
-                    "layer_fields": {"units": 64}
+                    "input": "(57600)",
+                    "output": 128,
+                    "dropout_rate": "None",
+                    "layer_fields": {"units": 128}
                 },
                 {
                     "layer_type": "Output",
                     "activation_fn": "Softmax",
-                    "weight_initiations": None,
-                    "input": 64,
+                    "weight_initiations": "Xavier Initialization",
+                    "input": 128,
                     "output": 10,
-                    "dropout_rate": None,
-                    "layer_fields": {"output_shape": [10]}
+                    "dropout_rate": "None",
+                    "layer_fields": {"output_shape": "(10)"}
                 }
             ],
             "optimization_fields": {
-                    "momentum": 0.5
-                }
+                "beta1": 0.9,
+                "beta2": 0.999,
+                "epsilon": 1e-08
+            }
         }
 
         # Add example JSON to the reference section
@@ -240,3 +248,246 @@ def first_gen(request_json, num, dataset_id, model):
     finally:
         if connection:
             connection.close()
+
+
+def insert_experiments_to_db(experiments, dataset_id):
+    """
+    Inserts experiments into the DB according to the schema:
+      - 'model' table -> one row per experiment's model
+      - 'experiment' table -> one row per experiment
+      - 'layer' table -> deduplicate or insert new layer
+      - 'model_layer' table -> map each layer to the model in order (layer_place)
+
+    :param experiments: Either a dictionary with key 'experiments' -> list, or directly a list of experiment dicts.
+    :param dataset_id:  The ID from 'processed_dataset_data' (database_id in 'model').
+    :return: The number of experiments successfully inserted.
+    """
+    connection = None
+    inserted_count = 0
+
+    try:
+        # 1) Normalize the 'experiments' input.
+        if isinstance(experiments, dict):
+            experiments = experiments.get("experiments", [])
+        if not isinstance(experiments, list):
+            raise ValueError("Invalid input: 'experiments' must be a list of dictionaries.")
+
+        # 2) Get DB connection & cursor
+        connection = DB.get_connection()
+        cursor = connection.cursor()
+
+        for experiment in experiments:
+            try:
+                #
+                # 3) Set default values for missing fields.
+                #
+                experiment.setdefault("loss_fn", "Cross Entropy Loss")
+                experiment.setdefault("optimization", "Adam")
+                experiment.setdefault("normalization", "StandardScaler")
+                experiment.setdefault("batch_size", 32)
+                experiment.setdefault("weight_decay", 0.0)
+                experiment.setdefault("learning_rate", 0.001)
+                experiment.setdefault("optimization_fields", {})
+                experiment.setdefault("layers", [])
+
+                #
+                # 4) Insert into the 'model' table
+                #
+                model_sql = """
+                    INSERT INTO model (
+                        database_id,
+                        loss_fn,
+                        optimization,
+                        normalization,
+                        batch_size,
+                        weight_decay,
+                        learning_rate,
+                        thresh,
+                        optimization_fields
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                model_vals = (
+                    dataset_id,
+                    experiment["loss_fn"],
+                    experiment["optimization"],
+                    experiment["normalization"],
+                    experiment["batch_size"],     # int
+                    experiment["weight_decay"],   # float
+                    experiment["learning_rate"],  # float
+                    experiment.get("thresh", None),
+                    json.dumps(experiment["optimization_fields"])
+                )
+                cursor.execute(model_sql, model_vals)
+                model_id = cursor.lastrowid
+
+                #
+                # 5) Insert into the 'experiment' table
+                #
+                # Replace based_on_id=0 with None, so we don't reference a non-existing experiment
+                based_on = experiment.get("based_on_id", 0)
+                if based_on == 0:
+                    based_on = None
+
+                experiment_sql = """
+                    INSERT INTO experiment (
+                        based_on,
+                        modification_text,
+                        model_id,
+                        state,
+                        date,
+                        sent_requests,
+                        tests_done
+                    )
+                    VALUES (%s, %s, %s, %s, NOW(), 0, 0)
+                """
+                experiment_vals = (
+                    based_on,
+                    "Generated experiment",
+                    model_id,
+                    "Waiting"
+                )
+                cursor.execute(experiment_sql, experiment_vals)
+                exp_id = cursor.lastrowid
+
+                #
+                # 6) For each layer, insert (or deduplicate) in 'layer', then link in 'model_layer'
+                #
+                layer_place = 0
+                for layer in experiment["layers"]:
+                    # Make sure we have a dict for layer_fields
+                    layer_fields = layer.get("layer_fields", {})
+                    if isinstance(layer_fields, str):
+                        try:
+                            layer_fields = json.loads(layer_fields)
+                        except json.JSONDecodeError:
+                            layer_fields = {}
+
+                    # Convert input/output to JSON strings for storage
+                    layer_input = json.dumps(layer.get("input")) if "input" in layer else None
+                    layer_output = json.dumps(layer.get("output")) if "output" in layer else None
+
+                    # Possibly parse dropout_rate into float or int if the DB column is numeric
+                    # If it's an INT column, handle carefully:
+                    dropout_val = layer.get("dropout_rate")
+                    if isinstance(dropout_val, str) and dropout_val.lower() == "none":
+                        dropout_val = None
+                    elif dropout_val is not None:
+                        # If your column is int but you have e.g. 0.5, you must decide how to store it
+                        # For safety, store as float or int:
+                        try:
+                            dropout_val = float(dropout_val)
+                        except ValueError:
+                            dropout_val = None
+
+                    # Prepare data for insertion
+                    layer_type = layer.get("layer_type", "Unknown")
+                    activation_fn = layer.get("activation_fn")
+                    weight_initiations = layer.get("weight_initiations")
+
+                    # JSON for the 'layer_fields' column
+                    layer_fields_json = json.dumps(layer_fields)
+
+                    # Optional dedup step: look for an existing layer with the exact same fields
+                    check_layer_sql = """
+                        SELECT layer_id
+                        FROM layer
+                        WHERE layer_type = %s
+                          AND activation_fn = %s
+                          AND weight_initiations = %s
+                          AND input = %s
+                          AND output = %s
+                          AND dropout_rate <=> %s
+                          AND layer_fields = %s
+                        LIMIT 1
+                    """
+                    cursor.execute(check_layer_sql, (
+                        layer_type,
+                        activation_fn,
+                        weight_initiations,
+                        layer_input,
+                        layer_output,
+                        dropout_val,
+                        layer_fields_json
+                    ))
+                    row = cursor.fetchone()
+
+                    if row:
+                        layer_id = row["layer_id"]
+                    else:
+                        # Insert new layer
+                        insert_layer_sql = """
+                            INSERT INTO layer (
+                                layer_type,
+                                activation_fn,
+                                weight_initiations,
+                                input,
+                                output,
+                                dropout_rate,
+                                layer_fields
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """
+                        cursor.execute(insert_layer_sql, (
+                            layer_type,
+                            activation_fn,
+                            weight_initiations,
+                            layer_input,
+                            layer_output,
+                            dropout_val,          # numeric or NULL
+                            layer_fields_json
+                        ))
+                        layer_id = cursor.lastrowid
+
+                    # Insert into model_layer
+                    # out_shape might be from layer_fields["output_shape"] or from "output" directly
+                    out_shape = layer_fields.get("output_shape", None)
+                    if out_shape is not None:
+                        out_shape = json.dumps(out_shape)
+                    else:
+                        out_shape = None
+
+                    model_layer_sql = """
+                        INSERT INTO model_layer (
+                            model_id,
+                            layer_id,
+                            layer_place,
+                            out_shape
+                        )
+                        VALUES (%s, %s, %s, %s)
+                    """
+                    cursor.execute(model_layer_sql, (
+                        model_id,
+                        layer_id,
+                        layer_place,
+                        out_shape
+                    ))
+
+                    layer_place += 1
+
+                connection.commit()
+                inserted_count += 1
+
+            except Exception as e:
+                # If something fails for this experiment, roll it back
+                if connection:
+                    connection.rollback()
+                print(f"Error processing experiment: {experiment}\nError: {e}")
+                continue
+
+        return inserted_count
+
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        print(f"Error inserting experiments: {e}")
+        raise
+
+    finally:
+        if connection:
+            connection.close()
+
+
+
+
+
