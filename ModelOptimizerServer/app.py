@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 
+from utils.test_requests import *
 from utils.utils import *
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
@@ -73,7 +74,7 @@ def generate_request():
             new_experiments = send_openai_request(request_data, model)
 
         # Insert these experiments into DB
-        inserted_count = insert_experiments_to_db(new_experiments, dataset_id)
+        inserted_count = insert_experiments_to_db(new_experiments, dataset_id, focus)
 
         return jsonify({
             "success": True,
@@ -120,7 +121,72 @@ def add_dataset():
         return jsonify({"success": False, "error": str(e)})
 
 
+@app.route("/get_tests", methods=["GET"])
+def get_tests():
+    """
+    1) Read the desired 'amount' from query params (default to 1 if missing).
+    2) Retrieve up to 'amount' experiments with sent_requests=0.
+    3) For each, create a corresponding row in 'test' table, update the experiment,
+       and build the final JSON for the client.
+    4) Return the array of tests with their full experiment data.
+    """
+    try:
+        amount = int(request.args.get("amount", 1))
 
+        # 1) get unrequested experiments
+        experiments = retrieve_unrequested_experiments(amount)
+        if not experiments:
+            return jsonify({
+                "success": True,
+                "tests": [],
+                "message": "No unrequested experiments found"
+            })
+
+        # 2) create tests for them
+        tests_data = create_tests_for_experiments(experiments)
+
+        return jsonify({
+            "success": True,
+            "tests": tests_data
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+
+
+@app.route("/count_tests", methods=["GET"])
+def count_tests():
+    """
+    Returns how many tests can currently be fetched, i.e. how many
+    experiments have sent_requests=0 (and possibly state='Waiting').
+    Example response: { "available": 5 }
+    """
+    connection = None
+    try:
+        connection = DB.get_connection()
+        cursor = connection.cursor()
+        query = """
+            SELECT COUNT(*) as cnt
+            FROM experiment
+            WHERE sent_requests=0
+              AND state='Waiting'
+        """
+        cursor.execute(query)
+        row = cursor.fetchone()
+        available = row[0] if row else 0
+
+        return jsonify({
+            "available": available
+        })
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
+    finally:
+        if connection:
+            connection.close()
 
 
 if __name__ == '__main__':

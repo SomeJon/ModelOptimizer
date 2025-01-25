@@ -70,7 +70,7 @@ def create_request_json(num, dataset_id, focus, num_of_based):
                     "batch_size": row["batch_size"],
                     "weight_decay": row["weight_decay"],
                     "learning_rate": row["learning_rate"],
-                    "thresh": row["thresh"],  # Add threshold value
+                    "thresh": row["thresh"],
                     "layers": []
                 }
             reference_experiments[exp_id]["layers"].append({
@@ -175,19 +175,21 @@ def first_gen(request_json, num, dataset_id, model):
         cursor.execute("SELECT optimization, optimization_fields FROM optimization")
         optimizations = {
             row["optimization"]: json.loads(row["optimization_fields"]) if row["optimization_fields"]
-                                                                           and row["optimization_fields"].strip() else {}
+                                                                       and row["optimization_fields"].strip() else {}
             for row in cursor.fetchall()
         }
 
         # Create an example JSON template with a CNN layer
         example_json = {
-            "based_on_id": 0,  # Indicates the first generation
+            "based_on_id": 0,  # First generation
             "loss_fn": "Cross Entropy Loss",
             "optimization": "Adam",
             "normalization": "StandardScaler",
             "batch_size": 32,
             "weight_decay": 0.0001,
             "learning_rate": 0.001,
+            # Here's our newly included epochs field
+            "epochs": 10,
             "layers": [
                 {
                     "layer_type": "Input",
@@ -250,7 +252,7 @@ def first_gen(request_json, num, dataset_id, model):
             connection.close()
 
 
-def insert_experiments_to_db(experiments, dataset_id):
+def insert_experiments_to_db(experiments, dataset_id, modification_text):
     """
     Inserts experiments into the DB according to the schema:
       - 'model' table -> one row per experiment's model
@@ -260,6 +262,7 @@ def insert_experiments_to_db(experiments, dataset_id):
 
     :param experiments: Either a dictionary with key 'experiments' -> list, or directly a list of experiment dicts.
     :param dataset_id:  The ID from 'processed_dataset_data' (database_id in 'model').
+    :param modification_text: Text describing why or how this experiment was generated (for experiment table).
     :return: The number of experiments successfully inserted.
     """
     connection = None
@@ -278,21 +281,18 @@ def insert_experiments_to_db(experiments, dataset_id):
 
         for experiment in experiments:
             try:
-                #
                 # 3) Set default values for missing fields.
-                #
                 experiment.setdefault("loss_fn", "Cross Entropy Loss")
                 experiment.setdefault("optimization", "Adam")
                 experiment.setdefault("normalization", "StandardScaler")
                 experiment.setdefault("batch_size", 32)
                 experiment.setdefault("weight_decay", 0.0)
                 experiment.setdefault("learning_rate", 0.001)
+                experiment.setdefault("epochs", 10)  # newly included
                 experiment.setdefault("optimization_fields", {})
                 experiment.setdefault("layers", [])
 
-                #
                 # 4) Insert into the 'model' table
-                #
                 model_sql = """
                     INSERT INTO model (
                         database_id,
@@ -303,9 +303,10 @@ def insert_experiments_to_db(experiments, dataset_id):
                         weight_decay,
                         learning_rate,
                         thresh,
-                        optimization_fields
+                        optimization_fields,
+                        epochs
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 model_vals = (
                     dataset_id,
@@ -316,15 +317,14 @@ def insert_experiments_to_db(experiments, dataset_id):
                     experiment["weight_decay"],   # float
                     experiment["learning_rate"],  # float
                     experiment.get("thresh", None),
-                    json.dumps(experiment["optimization_fields"])
+                    json.dumps(experiment["optimization_fields"]),
+                    experiment["epochs"]  # Insert epochs into model table
                 )
                 cursor.execute(model_sql, model_vals)
                 model_id = cursor.lastrowid
 
-                #
                 # 5) Insert into the 'experiment' table
-                #
-                # Replace based_on_id=0 with None, so we don't reference a non-existing experiment
+                # Replace based_on_id=0 with None if it is 0
                 based_on = experiment.get("based_on_id", 0)
                 if based_on == 0:
                     based_on = None
@@ -343,19 +343,16 @@ def insert_experiments_to_db(experiments, dataset_id):
                 """
                 experiment_vals = (
                     based_on,
-                    "Generated experiment",
+                    modification_text,
                     model_id,
                     "Waiting"
                 )
                 cursor.execute(experiment_sql, experiment_vals)
                 exp_id = cursor.lastrowid
 
-                #
-                # 6) For each layer, insert (or deduplicate) in 'layer', then link in 'model_layer'
-                #
+                # 6) For each layer, find or create a row in 'layer', then link via 'model_layer'
                 layer_place = 0
                 for layer in experiment["layers"]:
-                    # Make sure we have a dict for layer_fields
                     layer_fields = layer.get("layer_fields", {})
                     if isinstance(layer_fields, str):
                         try:
@@ -363,32 +360,25 @@ def insert_experiments_to_db(experiments, dataset_id):
                         except json.JSONDecodeError:
                             layer_fields = {}
 
-                    # Convert input/output to JSON strings for storage
+                    # Convert input/output to JSON strings
                     layer_input = json.dumps(layer.get("input")) if "input" in layer else None
                     layer_output = json.dumps(layer.get("output")) if "output" in layer else None
 
-                    # Possibly parse dropout_rate into float or int if the DB column is numeric
-                    # If it's an INT column, handle carefully:
                     dropout_val = layer.get("dropout_rate")
                     if isinstance(dropout_val, str) and dropout_val.lower() == "none":
                         dropout_val = None
                     elif dropout_val is not None:
-                        # If your column is int but you have e.g. 0.5, you must decide how to store it
-                        # For safety, store as float or int:
                         try:
                             dropout_val = float(dropout_val)
                         except ValueError:
                             dropout_val = None
 
-                    # Prepare data for insertion
                     layer_type = layer.get("layer_type", "Unknown")
                     activation_fn = layer.get("activation_fn")
                     weight_initiations = layer.get("weight_initiations")
-
-                    # JSON for the 'layer_fields' column
                     layer_fields_json = json.dumps(layer_fields)
 
-                    # Optional dedup step: look for an existing layer with the exact same fields
+                    # optional deduplicate:
                     check_layer_sql = """
                         SELECT layer_id
                         FROM layer
@@ -413,9 +403,8 @@ def insert_experiments_to_db(experiments, dataset_id):
                     row = cursor.fetchone()
 
                     if row:
-                        layer_id = row["layer_id"]
+                        layer_id = row[0]  # or row["layer_id"] if dict
                     else:
-                        # Insert new layer
                         insert_layer_sql = """
                             INSERT INTO layer (
                                 layer_type,
@@ -434,13 +423,11 @@ def insert_experiments_to_db(experiments, dataset_id):
                             weight_initiations,
                             layer_input,
                             layer_output,
-                            dropout_val,          # numeric or NULL
+                            dropout_val,
                             layer_fields_json
                         ))
                         layer_id = cursor.lastrowid
 
-                    # Insert into model_layer
-                    # out_shape might be from layer_fields["output_shape"] or from "output" directly
                     out_shape = layer_fields.get("output_shape", None)
                     if out_shape is not None:
                         out_shape = json.dumps(out_shape)
@@ -469,7 +456,6 @@ def insert_experiments_to_db(experiments, dataset_id):
                 inserted_count += 1
 
             except Exception as e:
-                # If something fails for this experiment, roll it back
                 if connection:
                     connection.rollback()
                 print(f"Error processing experiment: {experiment}\nError: {e}")
@@ -486,8 +472,3 @@ def insert_experiments_to_db(experiments, dataset_id):
     finally:
         if connection:
             connection.close()
-
-
-
-
-

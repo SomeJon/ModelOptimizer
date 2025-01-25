@@ -1,5 +1,6 @@
 import os
 
+from HttpClient.fetch_tests import fetch_tests_menu
 from HttpClient.methods import *
 
 
@@ -56,37 +57,7 @@ Main Menu:
 
         input("Click any button to continue...")
 
-def fetch_tests_menu():
-    """
-    Submenu for fetching tests to run.
-    """
-    while True:
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print("""
-=====================================
-          FETCH TESTS TO RUN
-=====================================
 
-1. Automatic Mode
-   - Continuously fetch and run tests.
-   - Set a maximum number of tests or run indefinitely.
-2. Manual Mode
-   - Fetch a specified number of tests and save them to a file.
-
-0. Return to Main Menu
--------------------------------------
-        """)
-        choice = input("Please choose an option (1-3): ").strip()
-
-        if choice == "1":
-            fetch_tests_automatic()
-        elif choice == "2":
-            fetch_tests_manual()
-        elif choice == "0":
-            return
-        else:
-            print("Invalid choice. Please try again.")
-            input("Press Enter to continue...")
 
 
 def check_pending_tests():
@@ -165,23 +136,7 @@ def sql_query_to_server():
     print("Query Result: [placeholder result]")
     input("Press Enter to return to the main menu...")
 
-# Fetch Tests Submenu Methods
-def fetch_tests_automatic():
-    """
-    Automatically fetch and run tests from the server.
-    """
-    print("Automatically fetching and running tests...")
-    # Placeholder for automatic fetch logic
-    input("Press Enter to return to the Fetch Tests menu...")
 
-def fetch_tests_manual():
-    """
-    Manually fetch a specific number of tests from the server.
-    """
-    num_tests = input("Enter the number of tests to fetch: ").strip()
-    print(f"Fetching {num_tests} tests...")
-    # Placeholder for manual fetch logic
-    input("Tests fetched successfully! Press Enter to return to the Fetch Tests menu...")
 
 # Entry Point
 

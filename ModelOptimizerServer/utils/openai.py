@@ -55,15 +55,18 @@ def send_openai_request(request_json, model):
                                 "content": (
                                     "You generate machine learning experiments in a single-line compact format.\n\n"
                                     "Format Rules:\n"
-                                    "1) Top-level fields separated by semicolons:\n"
-                                    "   based_on_id, loss_fn, optimization, normalization, batch_size, weight_decay, learning_rate, layers, optimization_fields.\n"
-                                    "2) 'layers': each layer is comma-separated key=value, and layers separated by '|'.\n"
+                                    "1) Top-level fields are separated by semicolons:\n"
+                                    "   based_on_id, loss_fn, optimization, normalization, batch_size, weight_decay, learning_rate, epochs, layers, optimization_fields.\n"
+                                    "2) If the experiment is not based on an existing experiment, set based_on_id:0.\n"
+                                    "   If the experiment is derived from an existing experiment with ID X, set based_on_id:X.\n"
+                                    "3) 'layers': each layer is comma-separated key=value, and layers separated by '|'.\n"
                                     "   If a layer has nested fields (layer_fields), represent them as plus-separated pairs, e.g. layer_fields=kernel_size=3+stride=1+...\n"
-                                    "3) 'optimization_fields': plus-separated pairs, e.g. optimization_fields:beta1=0.9+beta2=0.999+epsilon=1e-8.\n"
-                                    "4) Each layer must include 'input' and 'output'.\n"
-                                    "5) No JSON syntax or extra text. If multiple experiments, each on a new line.\n\n"
+                                    "4) 'optimization_fields': plus-separated pairs, e.g. optimization_fields:beta1=0.9+beta2=0.999+epsilon=1e-8.\n"
+                                    "5) Each layer must include 'input' and 'output'.\n"
+                                    "6) The 'epochs' field is also a top-level field (default 10 if not specified).\n"
+                                    "7) No JSON syntax or extra text. If multiple experiments, each on a new line.\n\n"
                                     "Example (4-layer CNN):\n"
-                                    "based_on_id:0;loss_fn:Cross Entropy Loss;optimization:Adam;normalization:StandardScaler;batch_size:32;weight_decay:0.0001;learning_rate:0.001;"
+                                    "based_on_id:0;loss_fn:Cross Entropy Loss;optimization:Adam;normalization:StandardScaler;batch_size:32;weight_decay:0.0001;learning_rate:0.001;epochs:10;"
                                     "layers:layer_type=Input,input=(32,32,3),output=(32,32,3),activation_fn=None,layer_fields=input_shape=(32,32,3)"
                                     "|layer_type=CNN,input=(32,32,3),output=(30,30,16),activation_fn=ReLU,layer_fields=kernel_size=3+stride=1+padding=0+in_channels=3+out_channels=16"
                                     "|layer_type=Pooling,input=(30,30,16),output=(15,15,16),activation_fn=None,layer_fields=pool_type='max'+pool_size=2+stride=2"
@@ -76,7 +79,8 @@ def send_openai_request(request_json, model):
                                 "content": (
                                     "Generate new machine learning experiments in the above format. "
                                     "All layers must have 'input' and 'output'. "
-                                    "No extra text or JSON.\n\n"
+                                    "Use based_on_id:0 if the experiment is brand-new, or based_on_id:X if referencing an existing ID. "
+                                    "Include 'epochs' if desired. No extra text or JSON.\n\n"
                                     f"Request:\n{compact_request_json}"
                                 )
                             }
@@ -113,7 +117,7 @@ def send_openai_request(request_json, model):
 
 def json_to_compact(data: dict) -> str:
     """
-    Convert a JSON-like dictionary into a compact string format.
+    Convert a JSON-like dictionary into the compact string format.
     - Top-level fields: semicolons (e.g. based_on_id:..., loss_fn:..., ...).
     - layers: each layer is comma-separated key=value, layers separated by '|'.
     - layer_fields: plus-separated pairs.
@@ -121,7 +125,7 @@ def json_to_compact(data: dict) -> str:
     """
     output_parts = []
 
-    # Ordered top-level fields
+    # Ordered top-level fields (added "epochs" at the end)
     top_fields_order = [
         "based_on_id",
         "loss_fn",
@@ -129,7 +133,8 @@ def json_to_compact(data: dict) -> str:
         "normalization",
         "batch_size",
         "weight_decay",
-        "learning_rate"
+        "learning_rate",
+        "epochs"
     ]
 
     # Add each top-level field if present
@@ -162,11 +167,11 @@ def json_to_compact(data: dict) -> str:
 
 def compact_to_json(compact_str: str) -> dict:
     """
-    Parse the compact string format back into a Python dict, without
-    splitting on commas inside parentheses.
+    Parse the compact string format back into a Python dict,
+    including the newly added 'epochs' field if present.
 
     Example:
-      based_on_id:0;loss_fn:Cross Entropy;...;layers:layer_type=Input,input=(32,32,3),...
+      based_on_id:0;loss_fn:Cross Entropy;...;epochs:20;layers:layer_type=Input,input=(32,32,3),...
     """
     def parse_value(s: str):
         s = s.strip()
@@ -202,7 +207,6 @@ def compact_to_json(compact_str: str) -> dict:
                 paren_depth = max(paren_depth - 1, 0)
                 current.append(char)
             elif char == ',' and paren_depth == 0:
-                # We split here
                 result.append("".join(current).strip())
                 current = []
             else:
@@ -226,13 +230,12 @@ def compact_to_json(compact_str: str) -> dict:
         val = val.strip()
 
         if key == "layers":
-            # e.g. "layer_type=Input,input=(32,32,3)...|layer_type=CNN,input=(32,32,3)..."
+            # e.g. "layer_type=Input,activation_fn=None, ... | layer_type=CNN, ..."
             layer_specs = val.split("|")
             layers_list = []
 
             for layer_str in layer_specs:
                 layer_dict = {}
-                # Instead of splitting directly on ',', we do:
                 sub_fields = split_on_commas_outside_parens(layer_str)
 
                 for sf in sub_fields:
@@ -258,7 +261,6 @@ def compact_to_json(compact_str: str) -> dict:
             result["layers"] = layers_list
 
         elif key == "optimization_fields":
-            # plus-separated
             opt_dict = {}
             for pair in val.split("+"):
                 if "=" in pair:
@@ -267,7 +269,7 @@ def compact_to_json(compact_str: str) -> dict:
             result[key] = opt_dict
 
         else:
-            # normal top-level
+            # normal top-level (including epochs)
             result[key] = parse_value(val)
 
     return result
