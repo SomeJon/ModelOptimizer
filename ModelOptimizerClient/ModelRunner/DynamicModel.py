@@ -8,10 +8,24 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, Normalizer
 
 
 class DynamicModel(nn.Module):
-    def __init__(self, json_str):
+    def __init__(self, json_input):
         super(DynamicModel, self).__init__()
-        # Parse the JSON string
-        config = json.loads(json_str)
+
+        # Determine if json_input is a string or a dictionary
+        if isinstance(json_input, str):
+            try:
+                config = json.loads(json_input)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON string provided: {e}")
+        elif isinstance(json_input, dict):
+            config = json_input
+        else:
+            raise TypeError("json_input must be a JSON string or dictionary.")
+
+        # Ensure 'experiment_data' is present
+        if 'experiment_data' not in config:
+            raise KeyError("'experiment_data' field is missing in the JSON configuration.")
+
         experiment = config['experiment_data']
 
         # Store training parameters
@@ -20,7 +34,7 @@ class DynamicModel(nn.Module):
         self.batch_size = experiment.get('batch_size', 32)
         self.epochs = experiment.get('epochs', 10)
         self.learning_rate = experiment.get('learning_rate', 0.001)
-        self.loss_fn_name = experiment.get('loss_fn', 'CrossEntropyLoss')
+        self.loss_fn_name = experiment.get('loss_fn', 'Cross Entropy Loss')
         self.normalization = experiment.get('normalization', 'None')
         self.optimization = experiment.get('optimization', 'Adam')
         self.optimization_fields = experiment.get('optimization_fields', {})
@@ -31,7 +45,7 @@ class DynamicModel(nn.Module):
 
         # Build layers
         self.layers = nn.ModuleList()
-        self.build_layers(experiment['layers'])
+        self.build_layers(experiment.get('layers', []))
 
         # Define loss function
         self.loss_fn = self.get_loss_fn(self.loss_fn_name)
@@ -41,6 +55,9 @@ class DynamicModel(nn.Module):
 
         # Handle normalization
         self.scaler = self.get_scaler(self.normalization)
+
+        # Perform validation
+        self.validate_configuration()
 
     def build_layers(self, layer_configs):
         for layer in layer_configs:
@@ -234,6 +251,7 @@ class DynamicModel(nn.Module):
         return activation
 
     def get_loss_fn(self, name):
+        # Updated to match the loss_fn names in your JSON
         loss_functions = {
             'Cross Entropy Loss': nn.CrossEntropyLoss(),
             'Binary Cross Entropy': nn.BCELoss(),
@@ -315,32 +333,84 @@ class DynamicModel(nn.Module):
             x = torch.tensor(x, dtype=torch.float32)
         return x
 
+    def validate_configuration(self):
+        """
+        Validates the model configuration to ensure compatibility between
+        the loss function, activation functions, and output layer.
+        Raises:
+            ValueError: If any incompatibility is found.
+        """
+        # Mapping of loss functions to expected output activation and label format
+        loss_fn_config = {
+            'Cross Entropy Loss': {
+                'activation': None,  # No activation; CrossEntropyLoss applies LogSoftmax
+                'label_format': 'class_indices'  # Labels should be class indices (LongTensor)
+            },
+            'Binary Cross Entropy': {
+                'activation': 'Sigmoid',  # Sigmoid activation for BCE
+                'label_format': 'binary'  # Labels should be binary (FloatTensor)
+            },
+            'Mean Squared Error': {
+                'activation': None,  # Typically no activation; depends on task
+                'label_format': 'regression'  # Labels should match output shape
+            },
+            # Add more configurations as needed
+        }
 
-def get_DynamicModel(json_str):
-    ret_model = DynamicModel(json_str)
+        current_loss_fn = self.loss_fn_name
+        if current_loss_fn not in loss_fn_config:
+            raise ValueError(f"Unsupported loss function for validation: {current_loss_fn}")
+
+        expected_activation = loss_fn_config[current_loss_fn]['activation']
+        label_format = loss_fn_config[current_loss_fn]['label_format']
+
+        # Determine the last layer's activation function
+        last_layer = self.layers[-1]
+        if isinstance(last_layer, nn.Linear):
+            last_activation = None
+        else:
+            # Iterate backwards to find the last activation function
+            last_activation = None
+            for layer in reversed(self.layers):
+                if isinstance(layer, nn.ReLU) or isinstance(layer, nn.Tanh) \
+                   or isinstance(layer, nn.Sigmoid) or isinstance(layer, nn.Softmax):
+                    last_activation = layer.__class__.__name__
+                    break
+
+        # Validation checks
+        if expected_activation:
+            if last_activation != expected_activation:
+                raise ValueError(
+                    f"Mismatch in activation function: "
+                    f"Loss Function '{current_loss_fn}' expects activation '{expected_activation}', "
+                    f"but found '{last_activation}'."
+                )
+        else:
+            if last_activation is not None and last_activation != 'Softmax':
+                # Allow Softmax if not expecting a specific activation
+                raise ValueError(
+                    f"Loss Function '{current_loss_fn}' does not expect an activation function, "
+                    f"but found '{last_activation}'."
+                )
+
+        # Validate output layer
+        output_layer = self.layers[-1]
+        if isinstance(output_layer, nn.Linear):
+            output_units = output_layer.out_features
+            if label_format == 'class_indices' and output_units < 2:
+                raise ValueError(
+                    f"Loss Function '{current_loss_fn}' expects at least 2 output units for multi-class classification."
+                )
+            # Additional checks can be added based on label_format
+        else:
+            raise ValueError("The last layer must be a Linear (Output) layer.")
+
+        # Informative message upon successful validation
+        print("Model configuration validated successfully.")
+
+
+def get_DynamicModel(json_input):
+    ret_model = DynamicModel(json_input)
     ret_model.initialize_optimizer()
 
     return ret_model
-
-
-# Example Usage
-if __name__ == "__main__":
-    # Example JSON string (use one from your list)
-    json_str = """
-    {"exp_id": 48, "experiment_data": {"based_on_id": 0, "batch_size": 128, "epochs": 10, "exp_id": 48, "layers": [{"activation_fn": "None", "dropout_rate": null, "input": "(32,32,3)", "layer_fields": {"input_shape": "(32,32,3)"}, "layer_type": "Input", "output": "(32,32,3)", "weight_initiations": null}, {"activation_fn": "Tanh", "dropout_rate": null, "input": "(32,32,3)", "layer_fields": {"in_channels": 3, "kernel_size": 5, "out_channels": 64, "padding": 0, "stride": 1}, "layer_type": "CNN", "output": "(28,28,64)", "weight_initiations": null}, {"activation_fn": "None", "dropout_rate": null, "input": "(28,28,64)", "layer_fields": {"pool_size": "(2,2)", "pool_type": "'average'", "stride": 2}, "layer_type": "Pooling", "output": "(14,14,64)", "weight_initiations": null}, {"activation_fn": "Tanh", "dropout_rate": null, "input": "(14*14*64)", "layer_fields": {"units": 120}, "layer_type": "Dense", "output": 120, "weight_initiations": null}, {"activation_fn": "Softmax", "dropout_rate": null, "input": 120, "layer_fields": {"output_shape": "(10)"}, "layer_type": "Output", "output": 10, "weight_initiations": null}], "learning_rate": 0.1, "loss_fn": "Cross Entropy Loss", "normalization": "MinMaxScaler", "optimization": "SGD", "optimization_fields": {"momentum": 0.99}, "weight_decay": 0.0}, "test_id": 60}
-    """
-
-    # Initialize the model
-    model = DynamicModel(json_str)
-
-    # Initialize optimizer
-    model.initialize_optimizer()
-
-    # Print the model architecture
-    print(model)
-
-    # Example forward pass with random input
-    # Assuming input shape is (batch_size, channels, height, width)
-    x = torch.randn(128, 3, 32, 32)  # Example input
-    output = model(x)
-    print(output.shape)  # Should match the Output layer's expected shape

@@ -1,5 +1,4 @@
 import os
-
 from HttpClient.client_test_runner import execute_loaded_tests
 from HttpClient.fetch_tests import fetch_tests_menu
 from HttpClient.methods import *

@@ -1,11 +1,17 @@
+# fetch_tests.py
+
 import os
 import json
 import requests  # or your preferred HTTP library
 from dotenv import load_dotenv
 
+from HttpClient.client_test_runner import display_test_and_result_counts
+
 # Load .env variables
 load_dotenv()
 SERVER_URL = os.getenv("SERVER_IP")
+PENDING_TESTS_FILE = './data/loaded_tests.json'
+COMPLETED_TESTS_FILE = './data/loaded_results.json'
 
 
 def fetch_tests_menu():
@@ -14,6 +20,7 @@ def fetch_tests_menu():
     """
     while True:
         os.system('cls' if os.name == 'nt' else 'clear')
+        display_test_and_result_counts()
         print("""
 =====================================
           FETCH TESTS TO RUN
@@ -40,7 +47,7 @@ def fetch_tests_menu():
             return
         else:
             print("Invalid choice. Please try again.")
-            input("Press Enter to continue...")
+        input("Press Enter to continue...")
 
 
 def fetch_tests_automatic():
@@ -58,11 +65,9 @@ def fetch_tests_automatic():
             max_tests = int(max_str)
             if max_tests <= 0:
                 print("No tests will be fetched.")
-                input("Press Enter to return...")
                 return
         except ValueError:
             print("Invalid number. Returning to menu.")
-            input("Press Enter to return...")
             return
 
     fetched_count = 0
@@ -77,17 +82,16 @@ def fetch_tests_automatic():
             break
 
         # We have 1 test (or sometimes the server might return up to 1).
-        append_tests_to_file(tests, "./data/loaded_tests")
+        append_tests_to_file(tests, PENDING_TESTS_FILE)
         fetched_count += len(tests)
         print(f"Fetched {len(tests)} test(s). Total so far: {fetched_count}.")
 
     print("Automatic fetching complete.")
-    input("Press Enter to return to the menu...")
 
 
 def fetch_tests_manual():
     """
-    Manually fetch a specific number of tests from the server, then append to loaded_tests.
+    Manually fetch a specific number of tests from the server, then append to loaded_tests.json.
     """
     print("=== MANUAL TEST FETCHING ===")
     num_tests_str = input("Enter the number of tests to fetch (0 to cancel): ").strip()
@@ -95,21 +99,18 @@ def fetch_tests_manual():
         num_tests = int(num_tests_str)
         if num_tests <= 0:
             print("Cancelling. No tests will be fetched.")
-            input("Press Enter to return...")
             return
     except ValueError:
         print("Invalid number. Returning.")
-        input("Press Enter to return...")
         return
 
     tests = fetch_tests_from_server(amount=num_tests)
     if not tests:
         print("No tests were returned by the server.")
     else:
-        append_tests_to_file(tests, "./data/loaded_tests")
-        print(f"Fetched {len(tests)} tests and saved to loaded_tests file.")
+        append_tests_to_file(tests, PENDING_TESTS_FILE)
+        print(f"Fetched {len(tests)} test(s) and saved to loaded_tests.json file.")
 
-    input("Press Enter to return to the menu...")
 
 
 def check_available_tests():
@@ -130,7 +131,7 @@ def check_available_tests():
     except Exception as e:
         print("Error contacting server:", e)
 
-    input("Press Enter to return to the menu...")
+
 
 # -------------------------------------------------------------------
 # Helper functions
@@ -163,15 +164,29 @@ def fetch_tests_from_server(amount):
 
 def append_tests_to_file(tests, filepath):
     """
-    Append the given list of test objects to the specified file, one test per line in JSON.
-    Creates the file if it doesn't exist.
+    Append the given list of test objects to the specified JSON array file.
+    Creates the file with an empty array if it doesn't exist.
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     try:
-        with open(filepath, "a", encoding="utf-8") as f:
-            for t in tests:
-                line = json.dumps(t)
-                f.write(line + "\n")
-        print(f"Appended {len(tests)} tests to {filepath}.")
+        if os.path.exists(filepath):
+            with open(filepath, "r") as f:
+                existing_tests = json.load(f)
+                if not isinstance(existing_tests, list):
+                    print(f"Error: The file {filepath} does not contain a JSON array.")
+                    return
+        else:
+            existing_tests = []
+
+        existing_tests.extend(tests)
+
+        with open(filepath, "w") as f:
+            json.dump(existing_tests, f, indent=4)
+
+        print(f"Appended {len(tests)} test(s) to {filepath}.")
+    except json.JSONDecodeError:
+        print(f"Error: The file {filepath} contains invalid JSON.")
     except Exception as e:
         print(f"Error writing to file {filepath}:", e)
+
+
