@@ -65,6 +65,7 @@ def send_openai_request(request_json, model):
                                     "5) Each layer must include 'input' and 'output'.\n"
                                     "6) The 'epochs' field is also a top-level field (default 10 if not specified).\n"
                                     "7) No JSON syntax or extra text. If multiple experiments, each on a new line.\n\n"
+                                    "Thresh field is used as Loss threshold: Stop if loss <= some_value. thrash is optional"
                                     "Example (4-layer CNN):\n"
                                     "based_on_id:0;loss_fn:Cross Entropy Loss;optimization:Adam;normalization:StandardScaler;batch_size:32;weight_decay:0.0001;learning_rate:0.001;epochs:10;"
                                     "layers:layer_type=Input,input=(32,32,3),output=(32,32,3),activation_fn=None,layer_fields=input_shape=(32,32,3)"

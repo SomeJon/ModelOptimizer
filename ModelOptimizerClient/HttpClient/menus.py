@@ -1,5 +1,6 @@
 import os
 
+from HttpClient.client_test_runner import execute_loaded_tests
 from HttpClient.fetch_tests import fetch_tests_menu
 from HttpClient.methods import *
 
@@ -78,36 +79,6 @@ def view_local_test_results():
     print("Viewing local test results...")
     # Placeholder for file operations
     input("Test results: [placeholder result]. Press Enter to return to the main menu...")
-
-def execute_loaded_tests():
-    """
-    Execute loaded tests on the local machine.
-    """
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print("""
-=====================================
-       EXECUTE LOADED TESTS
-=====================================
-    """)
-    print("Options:")
-    print("1. Set a maximum number of tests to run")
-    print("2. Run all loaded tests")
-    print("3. Return to Main Menu")
-    print("-------------------------------------")
-    choice = input("Please choose an option (1-3): ").strip()
-
-    if choice == "1":
-        max_tests = input("Enter the maximum number of tests to run: ").strip()
-        print(f"Running up to {max_tests} tests...")
-        # Placeholder for execution logic
-    elif choice == "2":
-        print("Running all loaded tests...")
-        # Placeholder for execution logic
-    elif choice == "3":
-        return
-    else:
-        print("Invalid choice. Please try again.")
-        input("Press Enter to continue...")
 
 
 def upload_test_results():

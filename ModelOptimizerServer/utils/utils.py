@@ -190,6 +190,7 @@ def first_gen(request_json, num, dataset_id, model):
             "learning_rate": 0.001,
             # Here's our newly included epochs field
             "epochs": 10,
+            "thresh": 0.00000000000000001,
             "layers": [
                 {
                     "layer_type": "Input",
