@@ -10,6 +10,9 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+data/
+/ModelOptimizerClient/data/
+/data/
 .Python
 build/
 develop-eggs/
