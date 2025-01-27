@@ -1,9 +1,12 @@
+# client_test_runner.py
+
 import os
 import json
 from datetime import datetime
 import sys
-from ModelRunner.runnable_test import train_model
+
 from ModelRunner.get_cifar_dataset import get_cifar10_datasets
+from ModelRunner.runnable_test import train_model
 
 # Define the paths to the JSON files
 PENDING_TESTS_FILE = './data/loaded_tests.json'
@@ -79,7 +82,7 @@ def display_execute_menu():
     print("\n0. Return to Main Menu")
 
 
-def run_tests(selected_tests, completed_tests, train_dataset, test_dataset):
+def run_tests(selected_tests, completed_tests):
     """
     Executes the selected tests and updates the completed_tests list.
 
@@ -92,6 +95,7 @@ def run_tests(selected_tests, completed_tests, train_dataset, test_dataset):
     Returns:
     - tuple: (Updated completed_tests list, list of successfully executed tests)
     """
+
     for idx, test in enumerate(selected_tests, 1):
         print(f"\nExecuting Test {idx}/{len(selected_tests)}:")
         exp_id = test.get('exp_id', 'Unknown')
@@ -129,6 +133,8 @@ def run_tests(selected_tests, completed_tests, train_dataset, test_dataset):
 
         # Pass the entire test dictionary to train_model
         try:
+            train_dataset, test_dataset = get_cifar10_datasets(experiment_data.get('normalization', None))
+
             result_json = train_model(test, train_dataset, test_dataset)
             result = json.loads(result_json)
 
@@ -183,8 +189,6 @@ def execute_loaded_tests():
     Submenu to execute loaded tests.
     Allows running tests all at once or a specific number, moves tests to completed_results with appropriate status.
     """
-    # Initialize datasets once
-    train_dataset, test_dataset = get_cifar10_datasets()
 
     while True:
         # Load pending and completed tests
@@ -203,7 +207,7 @@ def execute_loaded_tests():
 
         if choice == '1':
             print("\nRunning all pending tests...")
-            completed_tests, successfully_run_tests = run_tests(pending_tests, completed_tests, train_dataset, test_dataset)
+            completed_tests, successfully_run_tests = run_tests(pending_tests, completed_tests)
             # After running, remove all tests from pending_tests
             if successfully_run_tests:
                 # Create a set of IDs for faster lookup
@@ -236,7 +240,7 @@ def execute_loaded_tests():
                     print(f"Please enter a number between 1 and {len(pending_tests)}.")
 
             tests_to_run = pending_tests[:num]
-            completed_tests, successfully_run_tests = run_tests(tests_to_run, completed_tests, train_dataset, test_dataset)
+            completed_tests, successfully_run_tests = run_tests(tests_to_run, completed_tests)
             # Remove only the executed tests from pending_tests
             if successfully_run_tests:
                 # Create a set of IDs for faster lookup

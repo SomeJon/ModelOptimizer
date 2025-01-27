@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, Normalizer
 
+torch.manual_seed(0)
+
 
 class DynamicModel(nn.Module):
     def __init__(self, json_input):

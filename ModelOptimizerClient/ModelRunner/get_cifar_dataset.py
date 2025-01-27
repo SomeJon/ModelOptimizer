@@ -1,42 +1,41 @@
-import torchvision.datasets as datasets
-import torchvision.transforms as transforms
+import torch
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
 
-
-def get_cifar10_datasets(data_dir='./data'):
+def get_cifar10_datasets(normalization='None'):
     """
-    Downloads and returns the CIFAR-10 training and testing datasets with standard transformations.
+    Downloads and returns the CIFAR-10 training and testing datasets with specified transformations.
 
     Parameters:
-    - data_dir (str): Directory where the CIFAR-10 data will be stored/downloaded.
-
-    Returns:
-    - train_dataset (torch.utils.data.Dataset): Training dataset for CIFAR-10.
-    - test_dataset (torch.utils.data.Dataset): Testing dataset for CIFAR-10.
+    - normalization (str): The type of normalization to apply ('StandardScaler', 'MinMaxScaler', 'Normalizer', or 'None').
     """
+    # Define mean and std for CIFAR-10 for normalization
+    cifar10_mean = (0.4914, 0.4822, 0.4465)
+    cifar10_std = (0.2023, 0.1994, 0.2010)
 
-    # Define the standard transformation: convert images to tensors and normalize them
-    transform = transforms.Compose([
+    # Define transformations
+    transform_list = [
         transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[0.4914, 0.4822, 0.4465],  # CIFAR-10 training set mean
-            std=[0.2023, 0.1994, 0.2010]  # CIFAR-10 training set std
-        )
-    ])
+    ]
 
-    # Initialize the training dataset
-    train_dataset = datasets.CIFAR10(
-        root=data_dir,
-        train=True,
-        download=True,
-        transform=transform
-    )
+    if normalization == 'StandardScaler':
+        transform_list.append(transforms.Normalize(cifar10_mean, cifar10_std))
+    elif normalization == 'MinMaxScaler':
+        # For MinMaxScaler, we need to adjust the data to [0,1], which ToTensor already does
+        # Alternatively, you can implement custom scaling if needed
+        pass  # No additional transform needed
+    elif normalization == 'Normalizer':
+        # Normalizer scales input vectors individually to unit norm
+        transform_list.append(transforms.Normalize(mean=[0., 0., 0.], std=[1., 1., 1.]))
+    elif normalization == 'None':
+        pass  # No normalization
+    else:
+        raise ValueError(f"Unsupported normalization type: {normalization}")
 
-    # Initialize the testing dataset
-    test_dataset = datasets.CIFAR10(
-        root=data_dir,
-        train=False,
-        download=True,
-        transform=transform
-    )
+    transform = transforms.Compose(transform_list)
+
+    # Download CIFAR-10 training and testing datasets
+    train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
 
     return train_dataset, test_dataset
