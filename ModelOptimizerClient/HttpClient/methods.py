@@ -10,51 +10,6 @@ load_dotenv()
 SERVER_URL = os.getenv("SERVER_IP")  # Get the server IP and port from .env
 
 
-def view_datasets_on_server():
-    """
-    Fetches and displays datasets available on the server using the `/sql` endpoint.
-    """
-    try:
-        print("Fetching datasets from the server...")
-
-        # SQL query to fetch datasets
-        sql_query = "SELECT dataset_id, name, location, train_samples, test_samples, shape, description FROM processed_dataset_data"
-
-        # Send POST request to the `/sql` endpoint
-        response = requests.post(
-            f"http://{SERVER_URL}/sql",  # Build the URL dynamically from .env
-            json={"query": sql_query}
-        )
-
-        # Handle response
-        if response.status_code == 200:
-            response_text = response.text.strip()
-
-            # Remove potential `<pre>` tags if they exist
-            if response_text.startswith("<pre>") and response_text.endswith("</pre>"):
-                response_text = response_text[5:-6].strip()
-
-            # Split the response text into lines
-            lines = response_text.split("\n")
-            headers = lines[0].split(" | ")  # Extract headers
-            separator_line = lines[1]  # Separator line
-            rows = [line.split(" | ") for line in lines[2:]]  # Extract rows
-
-            # Create a PrettyTable to display the data
-            table = PrettyTable()
-            table.field_names = headers
-            for row in rows:
-                table.add_row(row)
-
-            print("\nDatasets Available on the Server:\n")
-            print(table)
-        else:
-            print(f"Error fetching datasets: {response.json().get('error', 'Unknown error')}")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-
 def load_dataset_to_server():
     """
     Load dataset information into the server.

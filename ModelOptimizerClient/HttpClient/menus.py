@@ -2,6 +2,9 @@ import os
 from HttpClient.client_test_runner import execute_loaded_tests
 from HttpClient.fetch_tests import fetch_tests_menu
 from HttpClient.methods import *
+from HttpClient.server_upload import upload_to_server
+from HttpClient.sql_requests import view_datasets_on_server
+from HttpClient.test_results import test_results
 
 
 def main_menu():
@@ -19,13 +22,11 @@ def main_menu():
 Main Menu:
 1. Fetch Tests to Run
 2. Generate New Tests
-3. Check Pending Test Count
-4. Load Dataset to Server
-5. View Local Test Results
-6. Execute Loaded Tests
-7. Upload Test Results to Server
-8. SQL Query to Server
-9. View datasets on the server
+3. Execute Loaded Tests
+4. Upload Test Results to Server
+5. Load Dataset to Server
+6. View datasets on the server
+7. Show tests results
 0. Exit
 -------------------------------------
         """)
@@ -36,19 +37,15 @@ Main Menu:
         elif choice == "2":
             generate_new_tests()
         elif choice == "3":
-            check_pending_tests()
-        elif choice == "4":
-            load_dataset_to_server()
-        elif choice == "5":
-            view_local_test_results()
-        elif choice == "6":
             execute_loaded_tests()
-        elif choice == "7":
-            upload_test_results()
-        elif choice == "8":
-            sql_query_to_server()
-        elif choice == "9":
+        elif choice == "4":
+            upload_to_server()
+        elif choice == "5":
+            load_dataset_to_server()
+        elif choice == "6":
             view_datasets_on_server()
+        elif choice == "7":
+            test_results()
         elif choice == "0":
             print("Exiting... Goodbye!")
             break

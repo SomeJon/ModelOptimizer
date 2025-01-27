@@ -112,7 +112,6 @@ def fetch_tests_manual():
         print(f"Fetched {len(tests)} test(s) and saved to loaded_tests.json file.")
 
 
-
 def check_available_tests():
     """
     Optional: Check how many tests are currently available on the server

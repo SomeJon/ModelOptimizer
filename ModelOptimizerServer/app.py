@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
-
+from utils.generate_requests import *
+from utils.load_requests import load_results
 from utils.test_requests import *
 from utils.utils import *
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
+import sqlparse
 
 # Assuming your database is set up with SQLAlchemy
 engine = create_engine('sqlite:///your_database.db')  # Update with your database connection
@@ -11,6 +13,7 @@ Session = sessionmaker(bind=engine)
 session = Session()
 
 app = Flask(__name__)
+
 
 @app.route('/')
 def hello_world():
@@ -21,31 +24,60 @@ def hello_world():
 @app.route('/sql', methods=['POST'])
 def execute_sql():
     try:
-        # Parse SQL query from the request
+        # Parse JSON payload from the request
         data = request.get_json()
-        sql_query = data.get("query")
+        if not data:
+            return jsonify({"error": "Invalid JSON payload."}), 400
 
+        sql_query = data.get("query")
         if not sql_query:
             return jsonify({"error": "No SQL query provided."}), 400
 
-        # Restrict destructive statements
-        if any(word in sql_query.upper() for word in ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER"]):
-            return jsonify({"error": "Query type not allowed."}), 403
+        # Parse and validate the SQL query
+        parsed = sqlparse.parse(sql_query)
+        if not is_select_query(parsed):
+            return jsonify({"error": "Only single SELECT statements are allowed."}), 403
+
+        # Get the 'type' query parameter, defaulting to 'html'
+        type_param = request.args.get('type', 'html').lower()
+        if type_param not in ['html', 'string_table', 'data']:
+            return jsonify({"error": "Invalid type parameter. Allowed values are 'html', 'string_table', 'data'."}), 400
 
         # Execute the query
         connection = DB.get_connection()
         cursor = connection.cursor()
         cursor.execute(sql_query)
+
+        # Fetch results
         rows = cursor.fetchall()
         headers = [desc[0] for desc in cursor.description]  # Extract column names
+
+        # Close the connection
+        cursor.close()
         connection.close()
 
-        # Format the result as an aligned table-like string
-        if rows:
-            result_table = format_as_aligned_table(headers, rows)
-            return f"<pre>{result_table}</pre>", 200  # Use <pre> for HTML formatting
-        else:
-            return "No results found.", 200
+        # Format and return the results based on 'type' parameter
+        if type_param == 'html':
+            if rows:
+                table_html = format_as_aligned_table(headers, rows, tablefmt="html")
+                return f"{table_html}", 200  # 'tabulate' returns HTML table
+            else:
+                return "No results found.", 200
+
+        elif type_param == 'string_table':
+            if rows:
+                table_str = format_as_aligned_table(headers, rows, tablefmt="grid")
+                return f"{table_str}", 200  # 'tabulate' returns grid-formatted table
+            else:
+                return "No results found.", 200
+
+        elif type_param == 'data':
+            if rows:
+                # Convert rows to list of dictionaries
+                data_list = [dict(zip(headers, row)) for row in rows]
+                return jsonify({"data": data_list}), 200
+            else:
+                return jsonify({"message": "No results found."}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -187,6 +219,20 @@ def count_tests():
     finally:
         if connection:
             connection.close()
+
+
+@app.route('/load_results', methods=['POST'])
+def upload_results():
+    data = request.get_json()
+    if data is None:
+        return jsonify({'error': 'No data received'}), 400
+
+    try:
+        # Assuming load_results is a function you'll define later
+        load_results(data)
+        return jsonify({'message': 'Data received and processed successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
