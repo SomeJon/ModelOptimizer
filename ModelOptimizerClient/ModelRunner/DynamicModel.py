@@ -339,8 +339,10 @@ class DynamicModel(nn.Module):
         """
         Validates the model configuration to ensure compatibility between
         the loss function, activation functions, and output layer.
+        If the loss function is 'Mean Squared Error' and the final layer is not Linear,
+        automatically add a Linear layer to make it compatible.
         Raises:
-            ValueError: If any incompatibility is found.
+            ValueError: If any other incompatibility is found.
         """
         # Mapping of loss functions to expected output activation and label format
         loss_fn_config = {
@@ -379,37 +381,68 @@ class DynamicModel(nn.Module):
                     last_activation = layer.__class__.__name__
                     break
 
-        # Validation checks
-        if expected_activation:
-            if last_activation != expected_activation:
-                raise ValueError(
-                    f"Mismatch in activation function: "
-                    f"Loss Function '{current_loss_fn}' expects activation '{expected_activation}', "
-                    f"but found '{last_activation}'."
-                )
-        else:
-            if last_activation is not None and last_activation != 'Softmax':
-                # Allow Softmax if not expecting a specific activation
-                raise ValueError(
-                    f"Loss Function '{current_loss_fn}' does not expect an activation function, "
-                    f"but found '{last_activation}'."
-                )
+        # Specific handling for 'Mean Squared Error'
+        if current_loss_fn == 'Mean Squared Error':
+            if not isinstance(last_layer, nn.Linear):
+                # Add a Linear layer to the model
+                # Determine input size
+                if isinstance(self.current_shape, tuple):
+                    input_dim = 1
+                    for dim in self.current_shape:
+                        input_dim *= dim
+                else:
+                    input_dim = self.current_shape
+                # Decide on output units; for regression, often output_units = 1
+                output_units = 1
+                linear = nn.Linear(input_dim, output_units)
+                self.layers.append(linear)
+                self.current_shape = output_units
+                print("Added a Linear layer to the model for Mean Squared Error loss.")
 
-        # Validate output layer
-        output_layer = self.layers[-1]
-        if isinstance(output_layer, nn.Linear):
-            output_units = output_layer.out_features
-            if label_format == 'class_indices' and output_units < 2:
-                raise ValueError(
-                    f"Loss Function '{current_loss_fn}' expects at least 2 output units for multi-class classification."
-                )
-            # Additional checks can be added based on label_format
+            # Optionally, check for activation function (typically none for MSE)
+            if expected_activation:
+                if last_activation != expected_activation:
+                    activation = self.get_activation_fn(expected_activation)
+                    if activation:
+                        self.layers.append(activation)
+                        print(f"Added activation function '{expected_activation}' to the model.")
         else:
-            raise ValueError("The last layer must be a Linear (Output) layer.")
+            # Handle other loss functions as before
+            if expected_activation:
+                if last_activation != expected_activation:
+                    raise ValueError(
+                        f"Mismatch in activation function: "
+                        f"Loss Function '{current_loss_fn}' expects activation '{expected_activation}', "
+                        f"but found '{last_activation}'."
+                    )
+            else:
+                if last_activation is not None and last_activation != 'Softmax':
+                    # For loss functions that don't expect a specific activation
+                    raise ValueError(
+                        f"Loss Function '{current_loss_fn}' does not expect an activation function, "
+                        f"but found '{last_activation}'."
+                    )
+
+            # Validate output layer
+            output_layer = self.layers[-1]
+            if isinstance(output_layer, nn.Linear):
+                output_units = output_layer.out_features
+                if label_format == 'class_indices' and output_units < 2:
+                    raise ValueError(
+                        f"Loss Function '{current_loss_fn}' expects at least 2 output units for multi-class classification."
+                    )
+                # Additional checks can be added based on label_format
+            else:
+                raise ValueError("The last layer must be a Linear (Output) layer.")
 
         # Informative message upon successful validation
         print("Model configuration validated successfully.")
 
+    def initialize_optimizer(self):
+        """
+        Initializes the optimizer. Should be called after model initialization.
+        """
+        self.optimizer = self.get_optimizer(self.parameters())
 
 def get_DynamicModel(json_input):
     ret_model = DynamicModel(json_input)

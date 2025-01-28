@@ -69,7 +69,6 @@ def upload_json(json_data):
 
         if 200 <= response.status_code < 300:
             print(f"Upload successful: {response.status_code} {response.reason}")
-            clear_loaded_results()
             return True
         else:
             print(f"Upload failed: {response.status_code} {response.reason}")

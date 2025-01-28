@@ -4,6 +4,7 @@ import requests  # or your preferred HTTP library
 from dotenv import load_dotenv
 
 from HttpClient.client_test_runner import *
+from HttpClient.server_upload import upload_to_server
 from ModelRunner.runnable_test import run_tests
 
 # Load .env variables
@@ -78,6 +79,7 @@ def fetch_tests_automatic():
 
         save_tests(PENDING_TESTS_FILE, pending_tests)
         save_tests(COMPLETED_TESTS_FILE, completed_tests)
+        upload_to_server()
 
         if max_tests is not None and fetched_count >= max_tests:
             print(f"Reached maximum of {max_tests} tests. Stopping.")
