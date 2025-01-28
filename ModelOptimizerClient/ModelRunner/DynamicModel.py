@@ -45,6 +45,9 @@ class DynamicModel(nn.Module):
         # Initialize current_shape to None
         self.current_shape = None
 
+        # Define number of classes (assuming CIFAR-10; adjust as needed)
+        self.num_classes = 10  # You can make this dynamic based on your dataset
+
         # Build layers
         self.layers = nn.ModuleList()
         self.build_layers(experiment.get('layers', []))
@@ -121,14 +124,20 @@ class DynamicModel(nn.Module):
             elif layer_type == 'BatchNorm':
                 num_features = layer_fields.get('num_features') or layer_fields.get('out_channels') or (
                     self.current_shape[-1] if isinstance(self.current_shape, tuple) else self.current_shape)
-                batch_norm = nn.BatchNorm2d(num_features)
+                # Determine if BatchNorm1d or BatchNorm2d based on current_shape
+                if isinstance(self.current_shape, tuple):
+                    # Assuming [H, W, C], use BatchNorm2d
+                    batch_norm = nn.BatchNorm2d(num_features)
+                else:
+                    # Assuming [batch_size, features], use BatchNorm1d
+                    batch_norm = nn.BatchNorm1d(num_features)
                 self.layers.append(batch_norm)
             elif layer_type == 'Dropout':
                 rate = layer_fields.get('rate', 0.5)
                 dropout = nn.Dropout(p=rate)
                 self.layers.append(dropout)
             elif layer_type == 'Output':
-                output_units = layer_fields.get('output_shape', 10)
+                output_units = layer_fields.get('output_shape', self.num_classes)
                 if isinstance(output_units, str):
                     output_units = self.parse_spec(output_units)
                 # Add a Linear layer to map from current feature size to output units
@@ -339,10 +348,9 @@ class DynamicModel(nn.Module):
         """
         Validates the model configuration to ensure compatibility between
         the loss function, activation functions, and output layer.
-        If the loss function is 'Mean Squared Error' and the final layer is not Linear,
-        automatically add a Linear layer to make it compatible.
+        Adjusts the final layer for MSE Loss in classification to have 'num_classes' outputs.
         Raises:
-            ValueError: If any other incompatibility is found.
+            ValueError: If any incompatibility is found.
         """
         # Mapping of loss functions to expected output activation and label format
         loss_fn_config = {
@@ -383,21 +391,27 @@ class DynamicModel(nn.Module):
 
         # Specific handling for 'Mean Squared Error'
         if current_loss_fn == 'Mean Squared Error':
-            if not isinstance(last_layer, nn.Linear):
-                # Add a Linear layer to the model
-                # Determine input size
+            # Ensure the final layer outputs 'num_classes' units
+            if not isinstance(last_layer, nn.Linear) or last_layer.out_features != self.num_classes:
+                # Remove the incorrect final layer if present
+                if not isinstance(last_layer, nn.Linear):
+                    self.layers.pop(-1)
+                elif last_layer.out_features != self.num_classes:
+                    self.layers.pop(-1)
+
+                # Determine input size for the new Linear layer
                 if isinstance(self.current_shape, tuple):
                     input_dim = 1
                     for dim in self.current_shape:
                         input_dim *= dim
                 else:
                     input_dim = self.current_shape
-                # Decide on output units; for regression, often output_units = 1
-                output_units = 1
-                linear = nn.Linear(input_dim, output_units)
+
+                # Add a new Linear layer with 'num_classes' outputs
+                linear = nn.Linear(input_dim, self.num_classes)
                 self.layers.append(linear)
-                self.current_shape = output_units
-                print("Added a Linear layer to the model for Mean Squared Error loss.")
+                self.current_shape = self.num_classes
+                print(f"Adjusted the final Linear layer to have {self.num_classes} output units for MSE Loss.")
 
             # Optionally, check for activation function (typically none for MSE)
             if expected_activation:
@@ -443,6 +457,7 @@ class DynamicModel(nn.Module):
         Initializes the optimizer. Should be called after model initialization.
         """
         self.optimizer = self.get_optimizer(self.parameters())
+
 
 def get_DynamicModel(json_input):
     ret_model = DynamicModel(json_input)

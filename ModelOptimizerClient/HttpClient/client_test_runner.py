@@ -1,9 +1,7 @@
 import os
 import json
-from datetime import datetime
 import sys
 
-from ModelRunner.get_cifar_dataset import get_cifar10_datasets
 from ModelRunner.runnable_test import train_model, run_tests
 
 # Define the paths to the JSON files

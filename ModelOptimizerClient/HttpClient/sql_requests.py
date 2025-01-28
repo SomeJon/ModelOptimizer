@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Ensure SERVER_URL is set in your environment variables
 load_dotenv()
-SERVER_URL = os.getenv('SERVER_URL', 'localhost:5000')  # Default to localhost:5000 if not set
+SERVER_URL = os.getenv('SERVER_IP')  # Default to localhost:5000 if not set
 
 
 def parse_grid_table(response_text):
@@ -138,7 +138,7 @@ def execute_sql_query(sql_query, response_type='data'):
     - Response content based on the response_type.
     """
     try:
-        url = f"http://{SERVER_URL}/sql"
+        url = f"{SERVER_URL}/sql"
         params = {'type': response_type}
         headers = {
             'Content-Type': 'application/json'

@@ -128,7 +128,7 @@ def check_available_tests():
     print("=== CHECK AVAILABLE TESTS ===")
     try:
         # Example GET request to /count_tests endpoint
-        resp = requests.get(f"http://{SERVER_URL}/count_tests")
+        resp = requests.get(f"{SERVER_URL}/count_tests")
         resp.raise_for_status()
         data = resp.json()
         if "available" in data:
@@ -150,7 +150,7 @@ def fetch_tests_from_server(amount):
     Returns the list of tests (could be empty if none available).
     """
     try:
-        url = f"http://{SERVER_URL}/get_tests?amount={amount}"
+        url = f"{SERVER_URL}/get_tests?amount={amount}"
         resp = requests.get(url)
         resp.raise_for_status()
         data = resp.json()

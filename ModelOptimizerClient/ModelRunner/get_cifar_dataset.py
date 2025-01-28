@@ -1,14 +1,20 @@
-import torch
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
 
-def get_cifar10_datasets(normalization='None'):
+
+def get_cifar10_datasets(normalization='None', train_ratio=0.8):
     """
-    Downloads and returns the CIFAR-10 training and testing datasets with specified transformations.
+    Downloads and returns the CIFAR-10 training, validation, and testing datasets with specified transformations.
 
     Parameters:
     - normalization (str): The type of normalization to apply ('StandardScaler', 'MinMaxScaler', 'Normalizer', or 'None').
+    - train_ratio (float): Proportion of the training dataset to be used for training (default is 0.8).
+
+    Returns:
+    - train_dataset (Subset): Training subset.
+    - valid_dataset (Subset): Validation subset.
+    - test_dataset (Dataset): Testing dataset.
     """
+
     # Define mean and std for CIFAR-10 for normalization
     cifar10_mean = (0.4914, 0.4822, 0.4465)
     cifar10_std = (0.2023, 0.1994, 0.2010)
@@ -21,8 +27,7 @@ def get_cifar10_datasets(normalization='None'):
     if normalization == 'StandardScaler':
         transform_list.append(transforms.Normalize(cifar10_mean, cifar10_std))
     elif normalization == 'MinMaxScaler':
-        # For MinMaxScaler, we need to adjust the data to [0,1], which ToTensor already does
-        # Alternatively, you can implement custom scaling if needed
+        # ToTensor already scales inputs to [0, 1]
         pass  # No additional transform needed
     elif normalization == 'Normalizer':
         # Normalizer scales input vectors individually to unit norm
@@ -34,8 +39,20 @@ def get_cifar10_datasets(normalization='None'):
 
     transform = transforms.Compose(transform_list)
 
-    # Download CIFAR-10 training and testing datasets
-    train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-    test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    # Download full training dataset
+    train_dataset = datasets.CIFAR10(
+        root='./data',
+        train=True,
+        download=True,
+        transform=transform
+    )
+
+    # Download testing dataset
+    test_dataset = datasets.CIFAR10(
+        root='./data',
+        train=False,
+        download=True,
+        transform=transform
+    )
 
     return train_dataset, test_dataset

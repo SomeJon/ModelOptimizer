@@ -6,13 +6,14 @@ import logging
 import json
 import requests
 
+from HttpClient.client_test_runner import save_tests
 from HttpClient.server_upload import upload_json
 from HttpClient.sql_requests import execute_sql_query
 from ModelRunner.runnable_test import run_tests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
-SERVER_URL = os.getenv('SERVER_URL', 'localhost:5000')  # Default to localhost:5000 if not set
+SERVER_URL = os.getenv('SERVER_IP')  # Default to localhost:5000 if not set
 
 
 def show_all_test_results():
@@ -279,7 +280,9 @@ def get_and_run_experiment():
             print(f"\nTests for Experiment ID {exp_id}:\n")
             results_json = []
             res = run_tests(tests, results_json)
-            upload_json(results_json)
+            print(results_json)
+            save_tests('./data/loaded_results.json', results_json) #todo delete
+            # upload_json(results_json)
         elif response.status_code == 404:
             print(f"No tests found for Experiment ID {exp_id}.")
         else:

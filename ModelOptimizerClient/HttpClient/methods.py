@@ -76,7 +76,7 @@ def load_dataset_to_server():
         # Send the request to the server
         print(f"\nUploading dataset '{name}' to the server...")
         response = requests.post(
-            f"http://{SERVER_URL}/add_dataset",  # Use the endpoint defined on the server
+            f"{SERVER_URL}/add_dataset",  # Use the endpoint defined on the server
             json=dataset_payload
         )
 
@@ -147,7 +147,7 @@ def generate_new_tests():
         # Send the request to the server
         print("\nSending request to the server...")
         response = requests.post(
-            f"http://{SERVER_URL}/gen",
+            f"{SERVER_URL}/gen",
             params={
                 "num": num,
                 "dataset_id": dataset_id,

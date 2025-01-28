@@ -60,7 +60,7 @@ def clear_loaded_results(file_path=COMPLETED_TESTS_FILE):
 
 
 def upload_json(json_data):
-    url = f"http://{SERVER_URL}/load_results"
+    url = f"{SERVER_URL}/load_results"
     headers = {
         'Content-Type': 'application/json'
     }

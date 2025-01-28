@@ -1,13 +1,14 @@
 import json
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import time
 from datetime import datetime
 from ModelRunner.DynamicModel import get_DynamicModel
+from ModelRunner.dataset_utils import get_split_sizes, get_data_loader
 from ModelRunner.get_cifar_dataset import get_cifar10_datasets
 
-torch.manual_seed(0) # to make sure all tests are more or else the same...
+torch.manual_seed(0) # to make sure all tests are more or less the same...
 
 
 def train_model(test_config, train_dataset, test_dataset):
@@ -48,76 +49,64 @@ def train_model(test_config, train_dataset, test_dataset):
     epochs = experiment.get('epochs', 10)
     loss_fn_name = experiment.get('loss_fn', 'Cross Entropy Loss')
 
-    # Define DataLoaders for training and testing
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    # Calculate dynamic split sizes
+    total_train_samples = len(train_dataset)  # Should be 50,000
+    train_size, valid_size = get_split_sizes(total_train_samples, 0.8)
+
+    # Split the training dataset into Training and Validation
+    train_dataset, valid_dataset = random_split(
+        train_dataset,
+        [train_size, valid_size],
+        generator=torch.Generator()
+    )
+
+    train_loader = get_data_loader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        use_cuda=torch.cuda.is_available()
+    )
+    test_loader = get_data_loader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        use_cuda=torch.cuda.is_available()
+    )
+    valid_loader = get_data_loader(
+        valid_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        use_cuda=torch.cuda.is_available()
+    )
 
     # Define the loss function and optimizer
     criterion = model.loss_fn  # Already defined in DynamicModel
     optimizer = model.optimizer  # Already initialized in DynamicModel
 
     # Lists to store training statistics
-    epoch_losses = []
-    epoch_accuracies = []
+    epoch_losses_train = []
+    epoch_accuracies_train = []
+    epoch_losses_validation = []
+    epoch_accuracies_validation = []
     last_trained_accuracy = 0
     # Start tracking training time
     start_time = time.time()
-
+    epoch_trained = 0
     # Training loop
     try:
         for epoch in range(1, epochs + 1):
             model.train()
-            running_loss = 0.0
-            correct_predictions = 0
-            total_samples = 0
-
-            for batch_idx, (inputs, labels) in enumerate(train_loader):
-                # Move inputs and labels to the device
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                # Zero the parameter gradients
-                optimizer.zero_grad()
-
-                # Forward pass
-                outputs = model(inputs)
-
-                # Compute loss
-                loss = criterion(outputs, labels)
-
-                # Backward pass and optimization
-                loss.backward()
-                optimizer.step()
-
-                # Accumulate loss
-                running_loss += loss.item() * inputs.size(0)
-
-                # Compute accuracy based on loss function
-                if loss_fn_name == 'Cross Entropy Loss':
-                    _, predicted = torch.max(outputs.data, 1)
-                    correct_predictions += (predicted == labels).sum().item()
-                elif loss_fn_name == 'Binary Cross Entropy':
-                    # Assuming binary classification with outputs as logits
-                    predicted = (torch.sigmoid(outputs) > 0.5).float()
-                    correct_predictions += (predicted == labels).sum().item()
-                else:
-                    # Handle other loss functions or set accuracy to None
-                    pass
-
-                total_samples += labels.size(0)
-
-            # Calculate average loss and accuracy for the epoch
-            epoch_loss = running_loss / total_samples
-            if loss_fn_name in ['Cross Entropy Loss', 'Binary Cross Entropy']:
-                epoch_accuracy = correct_predictions / total_samples
-                epoch_accuracies.append(round(epoch_accuracy, 5))  # Rounded for JSON compatibility
-                print(f"Epoch {epoch}/{epochs} - Loss: {epoch_loss:.4f} - Accuracy: {epoch_accuracy:.4f}")
-            else:
-                epoch_accuracy = None  # Not applicable
-                print(f"Epoch {epoch}/{epochs} - Loss: {epoch_loss:.4f}")
-
+            epoch_accuracy, epoch_loss = run_epoch(device, train_loader, loss_fn_name, model, epoch, epochs, 'Train', True)
+            if epoch_accuracy is not None:
+                epoch_accuracies_train.append(round(epoch_accuracy, 5))
+            epoch_losses_train.append(epoch_loss)
             last_trained_accuracy = epoch_accuracy
-            epoch_losses.append(epoch_loss)
+            epoch_trained += 1
+            model.eval()
+            epoch_accuracy, epoch_loss = run_epoch(device, valid_loader, loss_fn_name, model, epoch, epochs, 'Validation', False)
+            if epoch_accuracy is not None:
+                epoch_accuracies_validation.append(round(epoch_accuracy, 5))
+            epoch_losses_validation.append(epoch_loss)
 
     except Exception as e:
         # Handle errors during training
@@ -125,7 +114,7 @@ def train_model(test_config, train_dataset, test_dataset):
         training_time_seconds = end_time - start_time
         training_date = datetime.now().isoformat()
 
-        if epoch_losses:
+        if epoch_losses_train:
             # Partial completion
             result = {
                 "status": "Partial",
@@ -134,11 +123,13 @@ def train_model(test_config, train_dataset, test_dataset):
                 "device_name": device_name,
                 "error_message": f"Training Error after {epoch} epochs: {str(e)}",
                 "train_stats": {
-                    "epoch_losses": [round(loss, 5) for loss in epoch_losses],
-                    "epoch_accuracies": epoch_accuracies,
-                    "final_loss": round(epoch_losses[-1], 5),
-                    "final_accuracy": epoch_accuracies[-1] if epoch_accuracy is not None else None,
-                    "epochs_trained": epoch,
+                    "epoch_losses_train": [round(loss, 5) for loss in epoch_losses_train],
+                    "epoch_accuracies_train": epoch_accuracies_train,
+                    "epoch_losses_validation": epoch_losses_validation,
+                    "epoch_accuracies_validation": epoch_accuracies_validation,
+                    "final_loss": round(epoch_losses_train[-1], 5),
+                    "final_accuracy": last_trained_accuracy if last_trained_accuracy is not None else None,
+                    "epochs_trained": epoch_trained,
                     "training_time_seconds": round(training_time_seconds, 5),
                     "training_date": training_date
                 },
@@ -166,96 +157,25 @@ def train_model(test_config, train_dataset, test_dataset):
 
     # Evaluation on the test dataset
     model.eval()
-    test_loss = 0.0
-    correct_test_predictions = 0
-    total_test_samples = 0
+    epoch_accuracy, epoch_loss = run_epoch(device, test_loader, loss_fn_name, model, 1, 1, 'Test', True)
 
-    all_predictions = []
-    all_labels = []
-
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            # Move inputs and labels to the device
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-
-            # Forward pass
-            outputs = model(inputs)
-
-            # Compute loss
-            loss = criterion(outputs, labels)
-            test_loss += loss.item() * inputs.size(0)
-
-            # Predictions based on loss function
-            if loss_fn_name == 'Cross Entropy Loss':
-                _, predicted = torch.max(outputs.data, 1)
-                correct_test_predictions += (predicted == labels).sum().item()
-                all_predictions.extend(predicted.cpu().numpy())
-                all_labels.extend(labels.cpu().numpy())
-            elif loss_fn_name == 'Binary Cross Entropy':
-                # Assuming binary classification with outputs as logits
-                predicted = (torch.sigmoid(outputs) > 0.5).float()
-                correct_test_predictions += (predicted == labels).sum().item()
-                all_predictions.extend(predicted.cpu().numpy())
-                all_labels.extend(labels.cpu().numpy())
-            else:
-                # Handle other loss functions or set predictions to None
-                pass
-
-            total_test_samples += labels.size(0)
-
-    # Calculate average loss and accuracy for the test dataset
-    final_loss = test_loss / total_test_samples
-    if loss_fn_name in ['Cross Entropy Loss', 'Binary Cross Entropy']:
-        final_accuracy = correct_test_predictions / total_test_samples
-    else:
-        final_accuracy = None  # Not applicable
-
-    # Compute additional test statistics
-    if len(all_predictions) > 0 and len(all_labels) > 0:
-        all_predictions_tensor = torch.tensor(all_predictions, dtype=torch.float32, device=device)
-        all_labels_tensor = torch.tensor(all_labels, dtype=torch.float32, device=device)
-
-        # Mean Squared Error (MSE)
-        mse = nn.MSELoss()(all_predictions_tensor, all_labels_tensor).item()
-
-        # Variance of the dataset labels
-        variance_dataset = float(all_labels_tensor.var().item())
-
-        # Variance of the predictions
-        variance_y_hat = float(all_predictions_tensor.var().item())
-
-        # Mean Bias (mean of predictions - mean of labels)
-        mean_bias = float(all_predictions_tensor.mean().item() - all_labels_tensor.mean().item())
-
-        # Compile test statistics
-        test_stats = {
-            "mse": mse,
-            "variance_dataset": variance_dataset,
-            "variance_y_hat": variance_y_hat,
-            "mean_bias": mean_bias,
-            "accuracy": round(final_accuracy, 5) if final_accuracy is not None else None
-        }
-    else:
-        # Handle cases where predictions or labels are empty
-        test_stats = {
-            "mse": None,
-            "variance_dataset": None,
-            "variance_y_hat": None,
-            "mean_bias": None,
-            "accuracy": round(final_accuracy, 5) if final_accuracy is not None else None
-        }
+    test_stats = {
+        "test_loss": epoch_loss,
+        "test_accuracy": round(epoch_accuracy, 5) if epoch_accuracy is not None else None
+    }
 
     # Get the model architecture as a string
     model_architecture = str(model)
 
     # Compile training statistics
     train_stats = {
-        "epoch_losses": [round(loss, 5) for loss in epoch_losses],
-        "epoch_accuracies": epoch_accuracies,
-        "final_loss": round(final_loss, 5),
-        "final_accuracy": round(last_trained_accuracy, 5) if last_trained_accuracy is not None else None,
-        "epochs_trained": epochs,
+        "epoch_losses_train": [round(loss, 5) for loss in epoch_losses_train],
+        "epoch_accuracies_train": epoch_accuracies_train,
+        "epoch_losses_validation": epoch_losses_validation,
+        "epoch_accuracies_validation": epoch_accuracies_validation,
+        "final_loss": round(epoch_losses_train[-1], 5),
+        "final_accuracy": last_trained_accuracy if last_trained_accuracy is not None else None,
+        "epochs_trained": epoch_trained,
         "training_time_seconds": round(training_time_seconds, 5),
         "training_date": training_date
     }
@@ -364,3 +284,116 @@ def run_tests(selected_tests, completed_tests):
     )]
 
     return completed_tests, successfully_run_tests
+
+
+def get_labels(labels, loss_fn_name, device, num_classes=10):
+    """
+    Processes labels based on the loss function.
+
+    Parameters:
+    - labels (Tensor): Original labels.
+    - loss_fn_name (str): Name of the loss function.
+    - device (torch.device): Device to move labels to.
+    - num_classes (int): Number of classes for one-hot encoding.
+
+    Returns:
+    - Tensor: Processed labels.
+    """
+    if loss_fn_name == 'Mean Squared Error':
+        # Ensure labels are of type Long for scatter_
+        labels = labels.to(device).long().unsqueeze(1)  # Shape: [batch_size, 1]
+        # Initialize one-hot encoded tensor
+        one_hot = torch.zeros(labels.size(0), num_classes).to(device)
+        # Scatter 1s at the appropriate indices
+        one_hot.scatter_(1, labels, 1)
+        # Convert to float for MSELoss
+        labels = one_hot.float()
+    elif loss_fn_name == 'Cross Entropy Loss':
+        labels = labels.to(device).long()
+    elif loss_fn_name == 'Binary Cross Entropy':
+        labels = labels.to(device).float()
+    else:
+        labels = labels.to(device).float()
+    return labels
+
+
+def run_epoch(device, data_loader, loss_fn_name, model, epoch, epochs, print_label='Train', prints=False, num_classes=10):
+    """
+    Runs one epoch of training or validation.
+
+    Parameters:
+    - device (torch.device): Device to run the computations on.
+    - data_loader (DataLoader): DataLoader for the dataset.
+    - loss_fn_name (str): Name of the loss function.
+    - model (nn.Module): The model to train/evaluate.
+    - epoch (int): Current epoch number.
+    - epochs (int): Total number of epochs.
+    - num_classes (int): Number of classes for one-hot encoding (default: 10).
+
+    Returns:
+    - tuple: (epoch_accuracy, epoch_loss)
+    """
+    criterion = model.loss_fn  # Already defined in DynamicModel
+    optimizer = model.optimizer  # Already initialized in DynamicModel
+
+    running_loss = 0.0
+    correct_predictions = 0
+    total_samples = 0
+
+    with torch.set_grad_enabled(model.training):
+        for batch_idx, (inputs, labels) in enumerate(data_loader):
+            # Move inputs and labels to the device
+            inputs = inputs.to(device)
+            labels = get_labels(labels, loss_fn_name, device)
+
+            # Zero the parameter gradients
+            optimizer.zero_grad()
+
+            # Forward pass
+            outputs = model(inputs)
+
+            # For MSELoss, apply Softmax to outputs if using one-hot labels
+            if loss_fn_name == 'Mean Squared Error':
+                outputs = torch.softmax(outputs, dim=1)
+
+            # Compute loss
+            loss = criterion(outputs, labels)
+
+            # Backward pass and optimization
+            if model.training:
+                loss.backward()
+                optimizer.step()
+
+            # Accumulate loss
+            running_loss += loss.item() * inputs.size(0)
+
+            # Compute accuracy based on loss function
+            if loss_fn_name == 'Cross Entropy Loss':
+                _, predicted = torch.max(outputs.data, 1)
+                correct_predictions += (predicted == labels).sum().item()
+            elif loss_fn_name == 'Binary Cross Entropy':
+                # Assuming binary classification with outputs as logits
+                predicted = (torch.sigmoid(outputs) > 0.5).float()
+                correct_predictions += (predicted == labels).sum().item()
+            elif loss_fn_name == 'Mean Squared Error':
+                # Assuming one-hot labels
+                _, predicted = torch.max(outputs.data, 1)
+                _, actual = torch.max(labels.data, 1)
+                correct_predictions += (predicted == actual).sum().item()
+            else:
+                pass
+
+            total_samples += labels.size(0)
+
+    # Calculate average loss and accuracy for the epoch
+    epoch_loss = running_loss / total_samples
+    if loss_fn_name in ['Cross Entropy Loss', 'Binary Cross Entropy', 'Mean Squared Error']:
+        epoch_accuracy = correct_predictions / total_samples
+        if prints:
+            print(f"-{print_label}- Epoch {epoch}/{epochs} - Loss: {epoch_loss:.4f} - Accuracy: {epoch_accuracy:.4f}")
+    else:
+        epoch_accuracy = None  # Not applicable
+        if prints:
+            print(f"-{print_label}- Epoch {epoch}/{epochs} - Loss: {epoch_loss:.4f}")
+
+    return epoch_accuracy, epoch_loss
