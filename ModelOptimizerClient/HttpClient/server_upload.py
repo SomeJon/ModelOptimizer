@@ -36,29 +36,11 @@ def upload_to_server():
     - bool: True if upload was successful, False otherwise.
     """
     if len(load_tests(COMPLETED_TESTS_FILE)) > 0:
-        url = f"http://{SERVER_URL}/load_results"
-        headers = {
-            'Content-Type': 'application/json'
-        }
-
-        try:
-            data = load_tests(COMPLETED_TESTS_FILE)
-            response = requests.post(url, json=data, headers=headers)
-        except requests.exceptions.RequestException as e:
-            print(f"Error sending POST request to {url}: {e}")
-            return False
-
-        if 200 <= response.status_code < 300:
-            print(f"Upload successful: {response.status_code} {response.reason}")
+        data = load_tests(COMPLETED_TESTS_FILE)
+        if upload_json(data):
             clear_loaded_results()
-            return True
-        else:
-            print(f"Upload failed: {response.status_code} {response.reason}")
-            print(f"Server Response: {response.text}")
-            return False
     else:
         print("There are no tests that are ready for upload!")
-
 
 
 def clear_loaded_results(file_path=COMPLETED_TESTS_FILE):
@@ -76,4 +58,25 @@ def clear_loaded_results(file_path=COMPLETED_TESTS_FILE):
         print(f"Error clearing '{file_path}': {e}")
 
 
+def upload_json(json_data):
+    url = f"http://{SERVER_URL}/load_results"
+    headers = {
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        response = requests.post(url, json=json_data, headers=headers)
+
+        if 200 <= response.status_code < 300:
+            print(f"Upload successful: {response.status_code} {response.reason}")
+            clear_loaded_results()
+            return True
+        else:
+            print(f"Upload failed: {response.status_code} {response.reason}")
+            print(f"Server Response: {response.text}")
+            return False
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending POST request to {url}: {e}")
+        return False
 

@@ -188,6 +188,70 @@ def get_tests():
         })
 
 
+@app.route("/get_single_test", methods=["GET"])
+def get_single_test():
+    try:
+        exp_id = int(request.args.get("exp_id", 1))
+
+        experiments = create_test_for_exp(exp_id)
+        if not experiments:
+            return jsonify({
+                "success": True,
+                "tests": [],
+                "message": "Not found"
+            })
+
+        # 2) create tests for them
+        tests_data = create_tests_for_experiments(experiments)
+
+        return jsonify({
+            "success": True,
+            "tests": tests_data
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+
+
+@app.route("/get_single_exp", methods=["GET"])
+def get_single_exp():
+    connection = None
+    try:
+        exp_id = int(request.args.get("exp_id", 1))
+
+        experiment = create_test_for_exp(exp_id)
+        if not experiment:
+            return jsonify({
+                "success": True,
+                "tests": [],
+                "message": "Not found"
+            })
+
+        connection = DB.get_connection()
+        cursor = connection.cursor(pymysql.cursors.DictCursor)
+        exp_id = experiment[0].get("exp_id")
+        model_id = experiment[0].get("model_id")
+
+        experiment_data = build_experiment_dict(cursor, exp_id, model_id)
+
+        return jsonify({
+            "success": True,
+            "tests": experiment_data
+        })
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+    finally:
+        if connection:
+            connection.close()
+
+
 @app.route("/count_tests", methods=["GET"])
 def count_tests():
     """

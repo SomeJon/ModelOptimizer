@@ -1,11 +1,15 @@
 from prettytable import PrettyTable
 import logging
 import json
+import requests
 
+from HttpClient.server_upload import upload_json
 from HttpClient.sql_requests import execute_sql_query
+from ModelRunner.runnable_test import run_tests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+API_BASE_URL = "http://localhost:5000"  # Update this as per your server's address
 
 
 def show_all_test_results():
@@ -208,23 +212,78 @@ def show_more_data_of_test_result():
             print("Failed to parse JSON response.")
 
 
-def get_and_run_test_result():
+def view_experiment():
     """
-    Option 4: Get and run a test result based on test_id.
-    Currently a placeholder for future implementation.
+    Option 5: View details of a specific experiment based on exp_id.
     """
     while True:
         try:
-            test_id = int(input("Enter the Test ID to get and run: "))
-            if test_id <= 0:
-                print("Please enter a positive integer for Test ID.")
+            exp_id = int(input("Enter the Experiment ID to view details: "))
+            if exp_id <= 0:
+                print("Please enter a positive integer for Experiment ID.")
                 continue
             break
         except ValueError:
             print("Invalid input. Please enter a numeric value.")
 
-    # Placeholder for future implementation
-    print(f"Test ID {test_id} selected. Functionality to run the test is not yet implemented.")
+    # Call the /get_single_exp endpoint
+    try:
+        response = requests.get(f"{API_BASE_URL}/get_single_exp", params={'exp_id': exp_id})
+        if response.status_code == 200:
+            response_json = response.json()
+            tests = response_json.get('tests', [])
+            if not tests:
+                print(f"No experiment found with Experiment ID {exp_id}.")
+                return
+
+            # Display experiment details
+            print(f"\nDetails for Experiment ID {exp_id}:\n")
+            print(json.dumps(tests, indent=4))
+        elif response.status_code == 404:
+            print(f"No experiment found with Experiment ID {exp_id}.")
+        else:
+            print(f"Failed to retrieve experiment. Error: {response.json().get('error', 'Unknown Error')}")
+    except Exception as e:
+        print(f"An error occurred while fetching experiment details: {e}")
+
+
+def get_and_run_experiment():
+    """
+    Option 4 (Renamed): Get and Run Experiment based on test_id.
+    Currently, it just fetches the experiment JSON without running it.
+    """
+    while True:
+        try:
+            exp_id = int(input("Enter the Experiment ID to get and run: "))
+            if exp_id <= 0:
+                print("Please enter a positive integer for Experiment ID.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a numeric value.")
+
+    # Call the /get_single_test endpoint
+    try:
+        response = requests.get(f"{API_BASE_URL}/get_single_test", params={'exp_id': exp_id})
+        if response.status_code == 200:
+            response_json = response.json()
+            tests = response_json.get('tests', [])
+            if not tests:
+                print(f"Experiment ID {exp_id} couldn't produce a test!.")
+                return
+
+            # Display the JSON data
+            print(f"\nTests for Experiment ID {exp_id}:\n")
+            results_json = []
+            res = run_tests(tests, results_json)
+            upload_json(results_json)
+        elif response.status_code == 404:
+            print(f"No tests found for Experiment ID {exp_id}.")
+        else:
+            print(f"Failed to retrieve tests. Error: {response.json().get('error', 'Unknown Error')}")
+    except Exception as e:
+        print(f"An error occurred while fetching tests: {e}")
+
 
 def test_results():
     """
@@ -235,7 +294,8 @@ def test_results():
         print("1. Show All Test Results")
         print("2. Show Best Test Results")
         print("3. Show More Data of a Test Result")
-        print("4. Get and Run a Test Result")
+        print("4. Get and Run Experiment")
+        print("5. View an Experiment")
         print("0. Back to Main Menu")
 
         choice = input("Enter your choice: ").strip()
@@ -247,7 +307,9 @@ def test_results():
         elif choice == '3':
             show_more_data_of_test_result()
         elif choice == '4':
-            get_and_run_test_result()
+            get_and_run_experiment()
+        elif choice == '5':
+            view_experiment()
         elif choice == '0':
             print("Returning to the Main Menu...")
             break

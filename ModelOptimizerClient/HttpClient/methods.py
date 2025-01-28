@@ -5,6 +5,8 @@ import requests
 import os
 from dotenv import load_dotenv
 
+from HttpClient.sql_requests import view_datasets_on_server
+
 # Load .env variables
 load_dotenv()
 SERVER_URL = os.getenv("SERVER_IP")  # Get the server IP and port from .env

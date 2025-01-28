@@ -3,6 +3,7 @@ import json
 
 from utils.DB import DB
 
+
 def retrieve_unrequested_experiments(amount):
     """
     Retrieve up to `amount` experiments from DB that have `sent_requests=0`.
@@ -24,6 +25,33 @@ def retrieve_unrequested_experiments(amount):
             LIMIT %s
         """
         cursor.execute(query, (amount,))
+        rows = cursor.fetchall()
+        return rows
+
+    finally:
+        if connection:
+            connection.close()
+
+
+def create_test_for_exp(get_exp_id):
+    """
+    Retrieve up to `amount` experiments from DB that have `sent_requests=0`.
+    Return them as a list of dictionaries.
+    """
+    connection = None
+    try:
+        connection = DB.get_connection()
+        cursor = connection.cursor(pymysql.cursors.DictCursor)
+
+        query = """
+            SELECT
+                e.exp_id,
+                e.based_on,
+                e.model_id
+            FROM experiment e
+            WHERE e.exp_id = %s
+        """
+        cursor.execute(query, get_exp_id)
         rows = cursor.fetchall()
         return rows
 

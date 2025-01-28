@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from utils.DB import DB
 
+
 def load_results(data):
     connection = DB.get_connection()
     cursor = connection.cursor()

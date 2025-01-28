@@ -79,6 +79,8 @@ def send_openai_request(request_json, model):
                                 "role": "user",
                                 "content": (
                                     "Generate new machine learning experiments in the above format. "
+                                    "Unless told otherwise, attempt to generate new tests according to the reference_experiments "
+                                    "with small changes according to the focus part. "
                                     "All layers must have 'input' and 'output'. "
                                     "Use based_on_id:0 if the experiment is brand-new, or based_on_id:X if referencing an existing ID. "
                                     "Include 'epochs' if desired. No extra text or JSON.\n\n"

@@ -1,7 +1,20 @@
 import json
-from sqlalchemy.dialects.mysql import pymysql
+import pymysql
 from utils.DB import DB
 from utils.openai import send_openai_request
+
+
+def remove_outer_quotes(s):
+    """
+    Removes outer single or double quotes from a string if present.
+
+    :param s: The input string.
+    :return: The string without outer quotes.
+    """
+    if isinstance(s, str) and len(s) >= 2:
+        if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+            return s[1:-1]
+    return s
 
 
 def create_request_json(num, dataset_id, focus, num_of_based):
@@ -12,7 +25,7 @@ def create_request_json(num, dataset_id, focus, num_of_based):
     :param dataset_id: The ID of the dataset to base the tests on.
     :param focus: Instructions for the focus of the tests.
     :param num_of_based: Number of top experiments to use as references.
-    :return: JSON with the request structure for OpenAI.
+    :return: Dictionary with the request structure for OpenAI.
     """
     connection = None
     try:
@@ -20,65 +33,122 @@ def create_request_json(num, dataset_id, focus, num_of_based):
         connection = DB.get_connection()
         cursor = connection.cursor(pymysql.cursors.DictCursor)
 
-        # Fetch top experiments
-        query_experiments = """
-            SELECT exp.*, m.*, ml.layer_id, l.*
+        # Step 1: Fetch top 'num_of_based' experiments
+        query_top_experiments = """
+            SELECT exp.exp_id
             FROM experiment exp
             INNER JOIN model m ON exp.model_id = m.model_id
-            INNER JOIN model_layer ml ON m.model_id = ml.model_id
-            INNER JOIN layer l ON ml.layer_id = l.layer_id
-            INNER JOIN test t ON exp.exp_id = t.exp_id
-            WHERE exp.dataset_id = %s
+            INNER JOIN (
+                SELECT exp_id, MAX(score) AS max_score
+                FROM test
+                GROUP BY exp_id
+            ) t_max ON exp.exp_id = t_max.exp_id
+            INNER JOIN test t ON exp.exp_id = t.exp_id AND t.score = t_max.max_score
+            WHERE m.database_id = %s
             ORDER BY t.score DESC
-            LIMIT %s
+            LIMIT %s;
         """
-        cursor.execute(query_experiments, (dataset_id, num_of_based))
-        experiments = cursor.fetchall()
+        cursor.execute(query_top_experiments, (dataset_id, num_of_based))
+        top_experiments = cursor.fetchall()
 
-        # Group experiments and layers
-        reference_experiments = {}
-        for row in experiments:
-            exp_id = row["exp_id"]
-            if exp_id not in reference_experiments:
-                reference_experiments[exp_id] = {
-                    "based_on_id": exp_id,  # Replace exp_id with based_on_id
-                    "loss_fn": row["loss_fn"],
-                    "optimization": row["optimization"],
-                    "normalization": row["normalization"],
-                    "batch_size": row["batch_size"],
-                    "weight_decay": row["weight_decay"],
-                    "learning_rate": row["learning_rate"],
-                    "thresh": row["thresh"],
-                    "layers": []
+        print(f"Number of top experiments fetched: {len(top_experiments)}")  # Debug Statement
+
+        if not top_experiments:
+            print("No top experiments found for the given dataset_id and num_of_based.")
+            return {
+                "instructions": {
+                    "count": num,
+                    "focus": focus,
+                    "note": "In the result JSONs, replace exp_id with based_on_id."
+                },
+                "options": {
+                    "loss_fn": [],
+                    "optimization": [],
+                    "normalization": [],
+                    "layer_types": {},
+                    "optimization_fields": {}
+                },
+                "reference_experiments": []
+            }
+
+        # Step 2: For each top experiment, fetch detailed info including layers
+        reference_experiments = []
+        for exp in top_experiments:
+            exp_id = exp["exp_id"]
+
+            query_experiment_details = """
+                SELECT exp.*, m.*, ml.layer_id, ml.layer_place, l.*
+                FROM experiment exp
+                INNER JOIN model m ON exp.model_id = m.model_id
+                INNER JOIN model_layer ml ON m.model_id = ml.model_id
+                INNER JOIN layer l ON ml.layer_id = l.layer_id
+                WHERE m.database_id = %s AND exp.exp_id = %s
+                ORDER BY ml.layer_place ASC;
+            """
+            cursor.execute(query_experiment_details, (dataset_id, exp_id))
+            experiment_rows = cursor.fetchall()
+
+            if not experiment_rows:
+                print(f"No details found for experiment_id {exp_id}. Skipping.")
+                continue
+
+            # Organize layers
+            layers = []
+            for row in experiment_rows:
+                layer = {
+                    "layer_id": row["layer_id"],
+                    "layer_type": row["layer_type"],
+                    "activation_fn": row["activation_fn"],
+                    "weight_initiations": row["weight_initiations"],
+                    "input": remove_outer_quotes(row["input"]),
+                    "output": remove_outer_quotes(row["output"]),
+                    "dropout_rate": row["dropout_rate"],
+                    "layer_fields": json.loads(row["layer_fields"]) if row["layer_fields"] else {}
                 }
-            reference_experiments[exp_id]["layers"].append({
-                "layer_id": row["layer_id"],
-                "layer_type": row["layer_type"],
-                "activation_fn": row["activation_fn"],
-                "weight_initiations": row["weight_initiations"],
-                "input": row["input"],
-                "output": row["output"],
-                "dropout_rate": row["dropout_rate"],
-                "layer_fields": json.loads(row["layer_fields"]) if row["layer_fields"] else {}
-            })
+                layers.append(layer)
 
-        # Fetch options
+            # Construct the reference experiment entry
+            reference_experiment = {
+                "based_on_id": exp_id,  # Replace exp_id with based_on_id
+                "loss_fn": experiment_rows[0]["loss_fn"],
+                "optimization": experiment_rows[0]["optimization"],
+                "normalization": experiment_rows[0]["normalization"],
+                "batch_size": experiment_rows[0]["batch_size"],
+                "weight_decay": experiment_rows[0]["weight_decay"],
+                "learning_rate": experiment_rows[0]["learning_rate"],
+                "thresh": experiment_rows[0]["thresh"],
+                "layers": layers
+            }
+
+            reference_experiments.append(reference_experiment)
+
+        print(f"Number of reference_experiments populated: {len(reference_experiments)}")  # Debug Statement
+
+        # Step 3: Fetch options (assuming these remain unchanged)
+        # Fetch loss_fn options
         cursor.execute("SELECT loss_fn FROM loss_fn")
         loss_fn_options = [row["loss_fn"] for row in cursor.fetchall()]
+        print(f"Loss Function Options: {loss_fn_options}")  # Debug Statement
 
+        # Fetch optimization options and fields
         cursor.execute("SELECT optimization, optimization_fields FROM optimization")
         optimization_fields = {
             row["optimization"]: json.loads(row["optimization_fields"]) if row["optimization_fields"] else {}
             for row in cursor.fetchall()
         }
+        print(f"Optimization Fields: {optimization_fields}")  # Debug Statement
 
+        # Fetch normalization options
         cursor.execute("SELECT normalization FROM normalization")
         normalization_options = [row["normalization"] for row in cursor.fetchall()]
+        print(f"Normalization Options: {normalization_options}")  # Debug Statement
 
+        # Fetch layer types and their fields
         cursor.execute("SELECT layer_type, layer_fields FROM layer_type")
         layer_types = {row["layer_type"]: json.loads(row["layer_fields"]) for row in cursor.fetchall()}
+        print(f"Layer Types: {layer_types}")  # Debug Statement
 
-        # Build the JSON
+        # Step 4: Build the JSON
         request_json = {
             "instructions": {
                 "count": num,
@@ -92,10 +162,9 @@ def create_request_json(num, dataset_id, focus, num_of_based):
                 "layer_types": layer_types,
                 "optimization_fields": optimization_fields  # Explicit metadata for optimizations
             },
-            "reference_experiments": list(reference_experiments.values())
+            "reference_experiments": reference_experiments
         }
-
-        return json.dumps(request_json, indent=2)
+        return json.dumps(request_json)
 
     except Exception as e:
         print(f"Error creating request JSON: {e}")
