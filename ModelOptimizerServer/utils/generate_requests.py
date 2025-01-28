@@ -17,13 +17,12 @@ def remove_outer_quotes(s):
     return s
 
 
-def create_request_json(num, dataset_id, focus, num_of_based):
+def create_request_json(num, dataset_id, num_of_based):
     """
     Create a request JSON for generating new experiments.
 
     :param num: Number of tests to generate.
     :param dataset_id: The ID of the dataset to base the tests on.
-    :param focus: Instructions for the focus of the tests.
     :param num_of_based: Number of top experiments to use as references.
     :return: Dictionary with the request structure for OpenAI.
     """
@@ -58,7 +57,6 @@ def create_request_json(num, dataset_id, focus, num_of_based):
             return {
                 "instructions": {
                     "count": num,
-                    "focus": focus,
                     "note": "In the result JSONs, replace exp_id with based_on_id."
                 },
                 "options": {
@@ -96,7 +94,6 @@ def create_request_json(num, dataset_id, focus, num_of_based):
             layers = []
             for row in experiment_rows:
                 layer = {
-                    "layer_id": row["layer_id"],
                     "layer_type": row["layer_type"],
                     "activation_fn": row["activation_fn"],
                     "weight_initiations": row["weight_initiations"],
@@ -152,7 +149,6 @@ def create_request_json(num, dataset_id, focus, num_of_based):
         request_json = {
             "instructions": {
                 "count": num,
-                "focus": focus,
                 "note": "In the result JSONs, replace exp_id with based_on_id."
             },
             "options": {
@@ -174,7 +170,7 @@ def create_request_json(num, dataset_id, focus, num_of_based):
             connection.close()
 
 
-def first_gen(request_json, num, dataset_id, model):
+def first_gen(request_json, num, dataset_id, model, focus):
     connection = None
     try:
         # Establish database connection
@@ -206,8 +202,8 @@ def first_gen(request_json, num, dataset_id, model):
         except json.JSONDecodeError as e:
             raise ValueError(f"Error parsing dataset_shape: {dataset_shape} - {e}")
 
-        # Modify the focus in the request_json
-        request_json["instructions"]["focus"] += (
+        # Modify the focus
+        focus += (
             f" This is the first generation of tests. Please attempt to create {num} architectures for this dataset. "
             f"Dataset Details:\n"
             f"- Name: {dataset_name}\n"
@@ -289,7 +285,7 @@ def first_gen(request_json, num, dataset_id, model):
         request_json["reference_experiments"].append(example_json)
 
         # Send to OpenAI API
-        openai_response = send_openai_request(request_json, model)
+        openai_response = send_openai_request(request_json, model, focus)
         return openai_response
 
     except Exception as e:

@@ -94,16 +94,16 @@ def generate_request():
         model = request.args.get('model', 'gpt-4-turbo')  # default model
 
         # Prepare the request JSON for generation
-        request_json = create_request_json(num, dataset_id, focus, num_of_based)
+        request_json = create_request_json(num, dataset_id, num_of_based)
         request_data = json.loads(request_json)  # parse to dict
 
         print("Generated request data:", request_data)
 
         # If no reference_experiments, do a "first_gen" approach; else normal generation
         if not request_data.get("reference_experiments"):
-            new_experiments = first_gen(request_data, num, dataset_id, model)
+            new_experiments = first_gen(request_data, num, dataset_id, model, focus)
         else:
-            new_experiments = send_openai_request(request_data, model)
+            new_experiments = send_openai_request(request_data, model, focus)
 
         # Insert these experiments into DB
         inserted_count = insert_experiments_to_db(new_experiments, dataset_id, focus)

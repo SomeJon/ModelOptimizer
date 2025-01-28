@@ -2,7 +2,7 @@ import json
 from utils.CustomChatCompletion import CustomChatCompletion
 
 
-def send_openai_request(request_json, model):
+def send_openai_request(request_json, model, focus):
     """
     Sends requests to OpenAI API for each reference experiment in the input JSON,
     asking the model to generate new compact-format machine learning experiments.
@@ -53,20 +53,21 @@ def send_openai_request(request_json, model):
                             {
                                 "role": "system",
                                 "content": (
-                                    "You generate machine learning experiments in a single-line compact format.\n\n"
-                                    "Format Rules:\n"
-                                    "1) Top-level fields are separated by semicolons:\n"
-                                    "   based_on_id, loss_fn, optimization, normalization, batch_size, weight_decay, learning_rate, epochs, layers, optimization_fields.\n"
-                                    "2) If the experiment is not based on an existing experiment, set based_on_id:0.\n"
-                                    "   If the experiment is derived from an existing experiment with ID X, set based_on_id:X.\n"
-                                    "3) 'layers': each layer is comma-separated key=value, and layers separated by '|'.\n"
-                                    "   If a layer has nested fields (layer_fields), represent them as plus-separated pairs, e.g. layer_fields=kernel_size=3+stride=1+...\n"
-                                    "4) 'optimization_fields': plus-separated pairs, e.g. optimization_fields:beta1=0.9+beta2=0.999+epsilon=1e-8.\n"
-                                    "5) Each layer must include 'input' and 'output'.\n"
-                                    "6) The 'epochs' field is also a top-level field (default 10 if not specified).\n"
-                                    "7) No JSON syntax or extra text. If multiple experiments, each on a new line.\n\n"
-                                    "Thresh field is used as Loss threshold: Stop if loss <= some_value. thrash is optional"
-                                    "Example (4-layer CNN):\n"
+                                    "You are an assistant specialized in generating machine learning experiments in a single-line compact format.\n\n"
+                                    "**Primary Objective:**\n"
+                                    f"- **Focus:** {focus}.\n\n"
+                                    "**Format Rules:**\n"
+                                    "1. Top-level fields are separated by semicolons:\n"
+                                    "   `based_on_id`, `loss_fn`, `optimization`, `normalization`, `batch_size`, `weight_decay`, `learning_rate`, `epochs`, `layers`, `optimization_fields`.\n"
+                                    "2. If the experiment is not based on an existing experiment, set `based_on_id:0`.\n"
+                                    "   If derived from an existing experiment with ID X, set `based_on_id:X`.\n"
+                                    "3. `layers`: Each layer is comma-separated key=value, and layers are separated by `|`.\n"
+                                    "   If a layer has nested fields (`layer_fields`), represent them as plus-separated pairs, e.g., `layer_fields=kernel_size=3+stride=1+...`\n"
+                                    "4. `optimization_fields`: Plus-separated pairs, e.g., `optimization_fields:beta1=0.9+beta2=0.999+epsilon=1e-8`.\n"
+                                    "5. Each layer must include `input` and `output`.\n"
+                                    "6. Include `epochs` as a top-level field (default 10 if not specified).\n"
+                                    "7. No JSON syntax or extra text. If multiple experiments, each on a new line.\n\n"
+                                    "**Example (4-layer CNN):**\n"
                                     "based_on_id:0;loss_fn:Cross Entropy Loss;optimization:Adam;normalization:StandardScaler;batch_size:32;weight_decay:0.0001;learning_rate:0.001;epochs:10;"
                                     "layers:layer_type=Input,input=(32,32,3),output=(32,32,3),activation_fn=None,layer_fields=input_shape=(32,32,3)"
                                     "|layer_type=CNN,input=(32,32,3),output=(30,30,16),activation_fn=ReLU,layer_fields=kernel_size=3+stride=1+padding=0+in_channels=3+out_channels=16"
@@ -78,13 +79,15 @@ def send_openai_request(request_json, model):
                             {
                                 "role": "user",
                                 "content": (
-                                    "Generate new machine learning experiments in the above format. "
-                                    "Unless told otherwise, attempt to generate new tests according to the reference_experiments "
-                                    "with small changes according to the focus part. "
-                                    "All layers must have 'input' and 'output'. "
-                                    "Use based_on_id:0 if the experiment is brand-new, or based_on_id:X if referencing an existing ID. "
-                                    "Include 'epochs' if desired. No extra text or JSON.\n\n"
-                                    f"Request:\n{compact_request_json}"
+                                    "Generate 5 new machine learning experiments in the above format.\n\n"
+                                    "**Primary Objective:**\n"
+                                    f"- **Focus:** {focus}.\n\n"
+                                    "**Secondary Instructions:**\n"
+                                    "- Unless told otherwise, attempt to generate new tests according to the `reference_experiments` with small changes.\n"
+                                    "- All layers must have `input` and `output`.\n"
+                                    "- Use `based_on_id:0` if the experiment is brand-new, or `based_on_id:X` if referencing an existing ID.\n"
+                                    "- No extra text or JSON.\n\n"
+                                    f"**Request:**\n{compact_request_json}"
                                 )
                             }
                         ]

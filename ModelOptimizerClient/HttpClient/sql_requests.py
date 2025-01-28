@@ -1,6 +1,7 @@
 import re
 import os
 import requests
+from dotenv import load_dotenv
 from prettytable import PrettyTable
 import logging
 
@@ -8,6 +9,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Ensure SERVER_URL is set in your environment variables
+load_dotenv()
 SERVER_URL = os.getenv('SERVER_URL', 'localhost:5000')  # Default to localhost:5000 if not set
 
 

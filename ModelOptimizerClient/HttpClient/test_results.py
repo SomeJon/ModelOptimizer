@@ -1,3 +1,6 @@
+import os
+
+from dotenv import load_dotenv
 from prettytable import PrettyTable
 import logging
 import json
@@ -7,9 +10,9 @@ from HttpClient.server_upload import upload_json
 from HttpClient.sql_requests import execute_sql_query
 from ModelRunner.runnable_test import run_tests
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-API_BASE_URL = "http://localhost:5000"  # Update this as per your server's address
+load_dotenv()
+SERVER_URL = os.getenv('SERVER_URL', 'localhost:5000')  # Default to localhost:5000 if not set
 
 
 def show_all_test_results():
@@ -228,7 +231,7 @@ def view_experiment():
 
     # Call the /get_single_exp endpoint
     try:
-        response = requests.get(f"{API_BASE_URL}/get_single_exp", params={'exp_id': exp_id})
+        response = requests.get(f"{SERVER_URL}/get_single_exp", params={'exp_id': exp_id})
         if response.status_code == 200:
             response_json = response.json()
             tests = response_json.get('tests', [])
@@ -264,7 +267,7 @@ def get_and_run_experiment():
 
     # Call the /get_single_test endpoint
     try:
-        response = requests.get(f"{API_BASE_URL}/get_single_test", params={'exp_id': exp_id})
+        response = requests.get(f"{SERVER_URL}/get_single_test", params={'exp_id': exp_id})
         if response.status_code == 200:
             response_json = response.json()
             tests = response_json.get('tests', [])

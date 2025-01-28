@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from HttpClient.client_test_runner import load_tests
 
+load_dotenv()
 SERVER_URL = os.getenv("SERVER_IP")
 PENDING_TESTS_FILE = './data/loaded_tests.json'
 COMPLETED_TESTS_FILE = './data/loaded_results.json'
