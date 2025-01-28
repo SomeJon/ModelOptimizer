@@ -102,22 +102,7 @@ def execute_loaded_tests():
         choice = input("Enter your choice (0-3): ").strip()
 
         if choice == '1':
-            print("\nRunning all pending tests...")
-            completed_tests, successfully_run_tests = run_tests(pending_tests, completed_tests)
-            # After running, remove all tests from pending_tests
-            if successfully_run_tests:
-                # Create a set of IDs for faster lookup
-                successfully_run_ids = set(
-                    (test.get('exp_id'), test.get('test_id')) for test in successfully_run_tests
-                )
-                # Remove all tests that have been moved to completed_tests
-                pending_tests = [
-                    test for test in pending_tests
-                    if (test.get('exp_id'), test.get('test_id')) not in successfully_run_ids
-                ]
-                print("All executed tests have been moved to completed_results.")
-            else:
-                print("No tests were successfully executed.")
+            pending_tests, completed_tests = run_all(pending_tests, completed_tests)
 
         elif choice == '2':
             print("\nRun a Specific Number of Tests")
@@ -166,3 +151,24 @@ def execute_loaded_tests():
         # Save the updated test lists after each operation
         save_tests(PENDING_TESTS_FILE, pending_tests)
         save_tests(COMPLETED_TESTS_FILE, completed_tests)
+
+
+def run_all(pending_tests, completed_tests):
+    print("\nRunning all pending tests...")
+    completed_tests, successfully_run_tests = run_tests(pending_tests, completed_tests)
+    # After running, remove all tests from pending_tests
+    if successfully_run_tests:
+        # Create a set of IDs for faster lookup
+        successfully_run_ids = set(
+            (test.get('exp_id'), test.get('test_id')) for test in successfully_run_tests
+        )
+        # Remove all tests that have been moved to completed_tests
+        pending_tests = [
+            test for test in pending_tests
+            if (test.get('exp_id'), test.get('test_id')) not in successfully_run_ids
+        ]
+        print("All executed tests have been moved to completed_results.")
+    else:
+        print("No tests were successfully executed.")
+
+    return pending_tests, completed_tests

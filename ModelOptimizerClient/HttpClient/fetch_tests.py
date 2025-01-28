@@ -1,11 +1,10 @@
-# fetch_tests.py
-
 import os
 import json
 import requests  # or your preferred HTTP library
 from dotenv import load_dotenv
 
-from HttpClient.client_test_runner import display_test_and_result_counts
+from HttpClient.client_test_runner import *
+from ModelRunner.runnable_test import run_tests
 
 # Load .env variables
 load_dotenv()
@@ -72,6 +71,14 @@ def fetch_tests_automatic():
 
     fetched_count = 0
     while True:
+        pending_tests = load_tests(PENDING_TESTS_FILE)
+        completed_tests = load_tests(COMPLETED_TESTS_FILE)
+
+        pending_tests, completed_tests = run_all(pending_tests, completed_tests)
+
+        save_tests(PENDING_TESTS_FILE, pending_tests)
+        save_tests(COMPLETED_TESTS_FILE, completed_tests)
+
         if max_tests is not None and fetched_count >= max_tests:
             print(f"Reached maximum of {max_tests} tests. Stopping.")
             break
@@ -84,7 +91,6 @@ def fetch_tests_automatic():
         # We have 1 test (or sometimes the server might return up to 1).
         append_tests_to_file(tests, PENDING_TESTS_FILE)
         fetched_count += len(tests)
-        print(f"Fetched {len(tests)} test(s). Total so far: {fetched_count}.")
 
     print("Automatic fetching complete.")
 
@@ -129,11 +135,6 @@ def check_available_tests():
             print("Server response did not include 'available' field:", data)
     except Exception as e:
         print("Error contacting server:", e)
-
-
-
-# -------------------------------------------------------------------
-# Helper functions
 
 
 def fetch_tests_from_server(amount):
