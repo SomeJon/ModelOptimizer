@@ -46,7 +46,6 @@ def get_data_loader(dataset, batch_size, shuffle, use_cuda):
     Returns:
     - DataLoader: Configured DataLoader.
     """
-    # Determine optimal num_workers
 
     # Dynamically set num_workers and pin_memory
     if use_cuda:

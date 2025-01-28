@@ -33,34 +33,39 @@ def load_results(data):
             # Extract fields with appropriate default values
             test_id = result.get('test_id')
             exp_id = result.get('exp_id')
-            score = result.get('test_stats', {}).get('accuracy')
-            duration_seconds = result.get('train_stats', {}).get('training_time_seconds')
+            score = result.get('test_stats', {}).get('test_accuracy', 0)
+            duration_seconds = result.get('train_stats', {}).get('training_time_seconds', 0)
             hardware_config = result.get('device_name')
-            output_loss_epoch = json.dumps(result.get('train_stats', {}).get('epoch_losses', []))
-            output_accuracy_epoch = json.dumps(result.get('train_stats', {}).get('epoch_accuracies', []))
-            mse = result.get('test_stats', {}).get('mse')
-            variance_dataset = result.get('test_stats', {}).get('variance_dataset')
-            variance_y_hat = result.get('test_stats', {}).get('variance_y_hat')
-            mean_bias = result.get('test_stats', {}).get('mean_bias')
-            model_architecture = result.get('model_architecture')
-            error_message = result.get('error_message')
+
+            epoch_losses_train = json.dumps(result.get('train_stats', {}).get('epoch_losses_train', []))
+            epoch_losses_validation = json.dumps(result.get('train_stats', {}).get('epoch_losses_validation', []))
+            epoch_accuracies_train = json.dumps(result.get('train_stats', {}).get('epoch_accuracies_train', []))
+            epoch_accuracies_validation = json.dumps(result.get('train_stats', {}).get('epoch_accuracies_validation', []))
+
+            bias = result.get('train_stats', {}).get('final_loss', 0)
+            test_loss = result.get('test_stats', {}).get('test_loss', 0)
+            epochs_trained = result.get('train_stats', {}).get('epochs_trained', 0)
+            model_architecture = result.get('model_architecture', None)
+            error_message = result.get('error_message', None)
 
             # Prepare the data tuple, ensuring all fields are correctly set
             data_tuple = (
                 test_id,
                 exp_id,
-                score,  # This should be a float or None
+                score,
                 formatted_training_date,
-                duration_seconds,  # Float or None
-                hardware_config,  # String or None
-                output_loss_epoch,  # JSON string
-                output_accuracy_epoch,  # JSON string
-                mse,  # Float or None
-                variance_dataset,  # Float or None
-                variance_y_hat,  # Float or None
-                mean_bias,  # Float or None
-                model_architecture,  # String or None
-                error_message  # String or None
+                duration_seconds,
+                hardware_config,
+
+                epoch_losses_train,
+                epoch_losses_validation,
+                epoch_accuracies_train,
+                epoch_accuracies_validation,
+                bias,
+                test_loss,
+                epochs_trained,
+                model_architecture,
+                error_message
             )
 
             # Debugging: Print the data tuple
@@ -69,15 +74,18 @@ def load_results(data):
             # Update test record in the database
             query_test = """
                 INSERT INTO test (test_id, exp_id, score, date, duration_seconds, hardware_config,
-                                  output_loss_epoch, output_accuracy_epoch, mse, variance_dataset,
-                                  variance_y_hat, mean_bias, model_architecture, error_message)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  epoch_losses_train, epoch_losses_validation, epoch_accuracies_train,
+                                  epoch_accuracies_validation, bias, test_loss, epochs_trained,
+                                  model_architecture, error_message)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                 score=VALUES(score), date=VALUES(date), duration_seconds=VALUES(duration_seconds),
-                hardware_config=VALUES(hardware_config), output_loss_epoch=VALUES(output_loss_epoch),
-                output_accuracy_epoch=VALUES(output_accuracy_epoch), mse=VALUES(mse),
-                variance_dataset=VALUES(variance_dataset), variance_y_hat=VALUES(variance_y_hat),
-                mean_bias=VALUES(mean_bias), model_architecture=VALUES(model_architecture),
+                hardware_config=VALUES(hardware_config), epoch_losses_train=VALUES(epoch_losses_train),
+                epoch_losses_validation=VALUES(epoch_losses_validation), 
+                epoch_accuracies_train=VALUES(epoch_accuracies_train),
+                epoch_accuracies_validation=VALUES(epoch_accuracies_validation), bias=VALUES(bias),
+                test_loss=VALUES(test_loss), epochs_trained=VALUES(epochs_trained), 
+                model_architecture=VALUES(model_architecture),
                 error_message=VALUES(error_message)
             """
             cursor.execute(query_test, data_tuple)
