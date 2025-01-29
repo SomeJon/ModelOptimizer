@@ -48,6 +48,8 @@ def train_model(test_config, train_dataset, test_dataset):
     batch_size = experiment.get('batch_size', 32)
     epochs = experiment.get('epochs', 10)
     loss_fn_name = experiment.get('loss_fn', 'Cross Entropy Loss')
+    min_delta = experiment.get('min_delta', None)
+    patience = experiment.get('patience', None)
 
     # Calculate dynamic split sizes
     total_train_samples = len(train_dataset)  # Should be 50,000
@@ -79,9 +81,7 @@ def train_model(test_config, train_dataset, test_dataset):
         use_cuda=torch.cuda.is_available()
     )
 
-    # Define the loss function and optimizer
-    criterion = model.loss_fn  # Already defined in DynamicModel
-    optimizer = model.optimizer  # Already initialized in DynamicModel
+    early_stopping = EarlyStopping(patience=patience, delta=min_delta)
 
     # Lists to store training statistics
     epoch_losses_train = []
@@ -96,17 +96,21 @@ def train_model(test_config, train_dataset, test_dataset):
     try:
         for epoch in range(1, epochs + 1):
             model.train()
-            epoch_accuracy, epoch_loss = run_epoch(device, train_loader, loss_fn_name, model, epoch, epochs, 'Train', True)
+            epoch_accuracy, train_epoch_loss = run_epoch(device, train_loader, loss_fn_name, model, epoch, epochs, 'Train', True)
             if epoch_accuracy is not None:
                 epoch_accuracies_train.append(round(epoch_accuracy, 5))
-            epoch_losses_train.append(epoch_loss)
+            epoch_losses_train.append(train_epoch_loss)
             last_trained_accuracy = epoch_accuracy
             epoch_trained += 1
             model.eval()
-            epoch_accuracy, epoch_loss = run_epoch(device, valid_loader, loss_fn_name, model, epoch, epochs, 'Validation', False)
+            epoch_accuracy, valid_epoch_loss = run_epoch(device, valid_loader, loss_fn_name, model, epoch, epochs, 'Validation', False)
             if epoch_accuracy is not None:
                 epoch_accuracies_validation.append(round(epoch_accuracy, 5))
-            epoch_losses_validation.append(epoch_loss)
+            epoch_losses_validation.append(valid_epoch_loss)
+
+            if early_stopping(valid_epoch_loss):  # Check early stopping
+                print("Early stopping triggered!")
+                break
 
     except Exception as e:
         # Handle errors during training
@@ -397,3 +401,31 @@ def run_epoch(device, data_loader, loss_fn_name, model, epoch, epochs, print_lab
             print(f"-{print_label}- Epoch {epoch}/{epochs} - Loss: {epoch_loss:.4f}")
 
     return epoch_accuracy, epoch_loss
+
+
+class EarlyStopping:
+    def __init__(self, patience=None, delta=None):
+        self.patience = patience
+        self.delta = delta if delta is not None else 0  # Default delta to 0 if not specified
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+
+    def __call__(self, val_loss):
+        # If patience is None, always return False (no early stopping)
+        if self.patience is None:
+            self.early_stop = False
+            return False
+
+        # Standard early stopping logic
+        if self.best_loss is None:
+            self.best_loss = val_loss
+        elif val_loss > self.best_loss - self.delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_loss = val_loss
+            self.counter = 0
+
+        return self.early_stop

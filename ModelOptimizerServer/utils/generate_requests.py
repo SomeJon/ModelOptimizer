@@ -52,80 +52,65 @@ def create_request_json(num, dataset_id, num_of_based):
 
         print(f"Number of top experiments fetched: {len(top_experiments)}")  # Debug Statement
 
+        reference_experiments = []
+        # Step 2: For each top experiment, fetch detailed info including layers
         if not top_experiments:
             print("No top experiments found for the given dataset_id and num_of_based.")
-            return {
-                "instructions": {
-                    "count": num,
-                    "note": "In the result JSONs, replace exp_id with based_on_id."
-                },
-                "options": {
-                    "loss_fn": [],
-                    "optimization": [],
-                    "normalization": [],
-                    "layer_types": {},
-                    "optimization_fields": {}
-                },
-                "reference_experiments": []
-            }
+        else:
+            for exp in top_experiments:
+                exp_id = exp["exp_id"]
+                query_experiment_details = """
+                    SELECT exp.*, m.*, ml.layer_id, ml.layer_place, l.*
+                    FROM experiment exp
+                    INNER JOIN model m ON exp.model_id = m.model_id
+                    INNER JOIN model_layer ml ON m.model_id = ml.model_id
+                    INNER JOIN layer l ON ml.layer_id = l.layer_id
+                    WHERE m.database_id = %s AND exp.exp_id = %s
+                    ORDER BY ml.layer_place ASC;
+                """
+                cursor.execute(query_experiment_details, (dataset_id, exp_id))
+                experiment_rows = cursor.fetchall()
 
-        # Step 2: For each top experiment, fetch detailed info including layers
-        reference_experiments = []
-        for exp in top_experiments:
-            exp_id = exp["exp_id"]
+                if not experiment_rows:
+                    print(f"No details found for experiment_id {exp_id}. Skipping.")
+                    continue
 
-            query_experiment_details = """
-                SELECT exp.*, m.*, ml.layer_id, ml.layer_place, l.*
-                FROM experiment exp
-                INNER JOIN model m ON exp.model_id = m.model_id
-                INNER JOIN model_layer ml ON m.model_id = ml.model_id
-                INNER JOIN layer l ON ml.layer_id = l.layer_id
-                WHERE m.database_id = %s AND exp.exp_id = %s
-                ORDER BY ml.layer_place ASC;
-            """
-            cursor.execute(query_experiment_details, (dataset_id, exp_id))
-            experiment_rows = cursor.fetchall()
+                # Organize layers
+                layers = []
+                for row in experiment_rows:
+                    layer = {
+                        "layer_type": row["layer_type"],
+                        "activation_fn": row["activation_fn"],
+                        "weight_initiations": row["weight_initiations"],
+                        "input": remove_outer_quotes(row["input"]),
+                        "output": remove_outer_quotes(row["output"]),
+                        "dropout_rate": row["dropout_rate"],
+                        "layer_fields": json.loads(row["layer_fields"]) if row["layer_fields"] else {}
+                    }
+                    layers.append(layer)
 
-            if not experiment_rows:
-                print(f"No details found for experiment_id {exp_id}. Skipping.")
-                continue
-
-            # Organize layers
-            layers = []
-            for row in experiment_rows:
-                layer = {
-                    "layer_type": row["layer_type"],
-                    "activation_fn": row["activation_fn"],
-                    "weight_initiations": row["weight_initiations"],
-                    "input": remove_outer_quotes(row["input"]),
-                    "output": remove_outer_quotes(row["output"]),
-                    "dropout_rate": row["dropout_rate"],
-                    "layer_fields": json.loads(row["layer_fields"]) if row["layer_fields"] else {}
+                # Construct the reference experiment entry
+                reference_experiment = {
+                    "based_on_id": exp_id,  # Replace exp_id with based_on_id
+                    "loss_fn": experiment_rows[0]["loss_fn"],
+                    "optimization": experiment_rows[0]["optimization"],
+                    "normalization": experiment_rows[0]["normalization"],
+                    "batch_size": experiment_rows[0]["batch_size"],
+                    "weight_decay": experiment_rows[0]["weight_decay"],
+                    "learning_rate": experiment_rows[0]["learning_rate"],
+                    "min_delta": experiment_rows[0]["min_delta"],
+                    "patience": experiment_rows[0]["patience"],
+                    "layers": layers
                 }
-                layers.append(layer)
 
-            # Construct the reference experiment entry
-            reference_experiment = {
-                "based_on_id": exp_id,  # Replace exp_id with based_on_id
-                "loss_fn": experiment_rows[0]["loss_fn"],
-                "optimization": experiment_rows[0]["optimization"],
-                "normalization": experiment_rows[0]["normalization"],
-                "batch_size": experiment_rows[0]["batch_size"],
-                "weight_decay": experiment_rows[0]["weight_decay"],
-                "learning_rate": experiment_rows[0]["learning_rate"],
-                "thresh": experiment_rows[0]["thresh"],
-                "layers": layers
-            }
+                reference_experiments.append(reference_experiment)
 
-            reference_experiments.append(reference_experiment)
-
-        print(f"Number of reference_experiments populated: {len(reference_experiments)}")  # Debug Statement
+            print(f"Number of reference_experiments populated: {len(reference_experiments)}")  # Debug Statement
 
         # Step 3: Fetch options (assuming these remain unchanged)
         # Fetch loss_fn options
         cursor.execute("SELECT loss_fn FROM loss_fn")
         loss_fn_options = [row["loss_fn"] for row in cursor.fetchall()]
-        print(f"Loss Function Options: {loss_fn_options}")  # Debug Statement
 
         # Fetch optimization options and fields
         cursor.execute("SELECT optimization, optimization_fields FROM optimization")
@@ -133,17 +118,14 @@ def create_request_json(num, dataset_id, num_of_based):
             row["optimization"]: json.loads(row["optimization_fields"]) if row["optimization_fields"] else {}
             for row in cursor.fetchall()
         }
-        print(f"Optimization Fields: {optimization_fields}")  # Debug Statement
 
         # Fetch normalization options
         cursor.execute("SELECT normalization FROM normalization")
         normalization_options = [row["normalization"] for row in cursor.fetchall()]
-        print(f"Normalization Options: {normalization_options}")  # Debug Statement
 
         # Fetch layer types and their fields
         cursor.execute("SELECT layer_type, layer_fields FROM layer_type")
         layer_types = {row["layer_type"]: json.loads(row["layer_fields"]) for row in cursor.fetchall()}
-        print(f"Layer Types: {layer_types}")  # Debug Statement
 
         # Step 4: Build the JSON
         request_json = {
@@ -156,7 +138,9 @@ def create_request_json(num, dataset_id, num_of_based):
                 "optimization": list(optimization_fields.keys()),
                 "normalization": normalization_options,
                 "layer_types": layer_types,
-                "optimization_fields": optimization_fields  # Explicit metadata for optimizations
+                "optimization_fields": optimization_fields,  # Explicit metadata for optimizations
+                "min_delta": 'X where X is a double, for early stopping, should be really small or null',
+                "patience": 'X where X is an int, early stop slower'
             },
             "reference_experiments": reference_experiments
         }
@@ -233,7 +217,8 @@ def first_gen(request_json, num, dataset_id, model, focus):
             "learning_rate": 0.001,
             # Here's our newly included epochs field
             "epochs": 10,
-            "thresh": 0.00000000000000001,
+            "min_delta": 0.00000000000000001,
+            "patience": 1,
             "layers": [
                 {
                     "layer_type": "Input",
@@ -335,6 +320,22 @@ def insert_experiments_to_db(experiments, dataset_id, modification_text):
                 experiment.setdefault("epochs", 10)  # newly included
                 experiment.setdefault("optimization_fields", {})
                 experiment.setdefault("layers", [])
+                experiment.setdefault("min_delta", 0)
+                experiment.setdefault("patience", 10)
+
+                # Convert 'min_delta' to a float if it's not None and is a string that can be converted
+                if experiment['min_delta'] is not None:
+                    try:
+                        experiment['min_delta'] = float(experiment['min_delta'])
+                    except ValueError:
+                        experiment['min_delta'] = None  # Set to None if conversion fails
+
+                # Convert 'patience' to an int if it's not None and is a string that can be converted
+                if experiment['patience'] is not None:
+                    try:
+                        experiment['patience'] = int(experiment['patience'])
+                    except ValueError:
+                        experiment['patience'] = None  # Set to None if conversion fails
 
                 # 4) Insert into the 'model' table
                 model_sql = """
@@ -346,11 +347,12 @@ def insert_experiments_to_db(experiments, dataset_id, modification_text):
                         batch_size,
                         weight_decay,
                         learning_rate,
-                        thresh,
+                        min_delta,
+                        patience,
                         optimization_fields,
                         epochs
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 model_vals = (
                     dataset_id,
@@ -360,7 +362,8 @@ def insert_experiments_to_db(experiments, dataset_id, modification_text):
                     experiment["batch_size"],     # int
                     experiment["weight_decay"],   # float
                     experiment["learning_rate"],  # float
-                    experiment.get("thresh", None),
+                    experiment["min_delta"],
+                    experiment["patience"],
                     json.dumps(experiment["optimization_fields"]),
                     experiment["epochs"]  # Insert epochs into model table
                 )

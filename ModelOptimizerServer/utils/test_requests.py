@@ -148,7 +148,8 @@ def build_experiment_dict(cursor, exp_id, model_id):
             batch_size,
             weight_decay,
             learning_rate,
-            thresh,
+            min_delta,
+            patience,
             optimization_fields,
             epochs
         FROM model
@@ -198,6 +199,8 @@ def build_experiment_dict(cursor, exp_id, model_id):
         "batch_size": model_row["batch_size"],
         "weight_decay": float(model_row["weight_decay"]),
         "learning_rate": float(model_row["learning_rate"]),
+        "min_delta": model_row["min_delta"],
+        "patience": model_row["patience"],
         "epochs": model_row["epochs"],  # include epochs
         "optimization_fields": json.loads(model_row["optimization_fields"]) if model_row["optimization_fields"] else {},
         "layers": layers_list
