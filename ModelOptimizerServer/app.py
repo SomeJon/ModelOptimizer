@@ -3,14 +3,7 @@ from utils.generate_requests import *
 from utils.load_requests import load_results
 from utils.test_requests import *
 from utils.utils import *
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
 import sqlparse
-
-# Assuming your database is set up with SQLAlchemy
-engine = create_engine('sqlite:///your_database.db')  # Update with your database connection
-Session = sessionmaker(bind=engine)
-session = Session()
 
 app = Flask(__name__)
 
