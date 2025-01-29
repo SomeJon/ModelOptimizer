@@ -1,7 +1,6 @@
 import json
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import random_split
 import time
 from datetime import datetime
 from ModelRunner.DynamicModel import get_DynamicModel
@@ -201,95 +200,6 @@ def train_model(test_config, train_dataset, test_dataset):
     return result_json
 
 
-def run_tests(selected_tests, completed_tests):
-    for idx, test in enumerate(selected_tests, 1):
-        print(f"\nExecuting Test {idx}/{len(selected_tests)}:")
-        exp_id = test.get('exp_id', 'Unknown')
-        test_id = test.get('test_id', 'Unknown')
-        print(f"Exp ID: {exp_id}, Test ID: {test_id}")
-
-        # Extract necessary information from the test configuration
-        experiment_data = test.get('experiment_data', {})
-        if not experiment_data:
-            print(f"Error: Test {exp_id}-{test_id} is missing 'experiment_data'. Moving to results as Failed.")
-            # Create a failed result entry
-            result = {
-                "status": "Failed",
-                "test_id": test.get('test_id', None),
-                "exp_id": test.get('exp_id', None),
-                "error_message": "'experiment_data' field is missing in the JSON configuration.",
-                "execution_timestamp": datetime.now().isoformat()
-            }
-            completed_tests.append(result)
-            continue
-
-        # Ensure experiment_data is a dictionary
-        if not isinstance(experiment_data, dict):
-            print(f"Error: Test {exp_id}-{test_id} has invalid 'experiment_data' format. Moving to results as Failed.")
-            # Create a failed result entry
-            result = {
-                "status": "Failed",
-                "test_id": test.get('test_id', None),
-                "exp_id": test.get('exp_id', None),
-                "error_message": "'experiment_data' is not a valid dictionary.",
-                "execution_timestamp": datetime.now().isoformat()
-            }
-            completed_tests.append(result)
-            continue
-
-        # Pass the entire test dictionary to train_model
-        try:
-            train_dataset, test_dataset = get_cifar10_datasets(experiment_data.get('normalization', None))
-
-            result_json = train_model(test, train_dataset, test_dataset)
-            result = json.loads(result_json)
-
-            # Check the status and handle accordingly
-            status = result.get('status', 'Failed')
-            if status == 'Success':
-                print(f"Test {exp_id}-{test_id} completed successfully.")
-            elif status == 'Partial':
-                print(f"Test {exp_id}-{test_id} completed partially.")
-            elif status == 'Failed':
-                print(f"Test {exp_id}-{test_id} failed: {result.get('error_message', 'Unknown error.')}")
-            else:
-                print(f"Test {exp_id}-{test_id} returned an unknown status: {status}")
-
-            # Append the result to completed_tests regardless of status
-            completed_tests.append(result)
-
-        except json.JSONDecodeError:
-            print(f"Error: Received invalid JSON response for Test {exp_id}-{test_id}. Moving to results as Failed.")
-            # Create a failed result entry
-            result = {
-                "status": "Failed",
-                "test_id": test.get('test_id', None),
-                "exp_id": test.get('exp_id', None),
-                "error_message": "Invalid JSON response from train_model.",
-                "execution_timestamp": datetime.now().isoformat()
-            }
-            completed_tests.append(result)
-        except Exception as e:
-            print(f"Error executing Test {exp_id}-{test_id}: {e}. Moving to results as Failed.")
-            # Create a failed result entry
-            result = {
-                "status": "Failed",
-                "test_id": test.get('test_id', None),
-                "exp_id": test.get('exp_id', None),
-                "error_message": f"Unexpected error: {str(e)}",
-                "execution_timestamp": datetime.now().isoformat()
-            }
-            completed_tests.append(result)
-
-    # Determine which tests were successfully run (Success or Partial)
-    successfully_run_tests = [test for test in selected_tests if any(
-        (result.get('test_id') == test.get('test_id') and result.get('exp_id') == test.get('exp_id'))
-        for result in completed_tests
-    )]
-
-    return completed_tests, successfully_run_tests
-
-
 def get_labels(labels, loss_fn_name, device, num_classes=10):
     """
     Processes labels based on the loss function.
@@ -429,3 +339,92 @@ class EarlyStopping:
             self.counter = 0
 
         return self.early_stop
+
+
+def run_tests(selected_tests, completed_tests):
+    for idx, test in enumerate(selected_tests, 1):
+        print(f"\nExecuting Test {idx}/{len(selected_tests)}:")
+        exp_id = test.get('exp_id', 'Unknown')
+        test_id = test.get('test_id', 'Unknown')
+        print(f"Exp ID: {exp_id}, Test ID: {test_id}")
+
+        # Extract necessary information from the test configuration
+        experiment_data = test.get('experiment_data', {})
+        if not experiment_data:
+            print(f"Error: Test {exp_id}-{test_id} is missing 'experiment_data'. Moving to results as Failed.")
+            # Create a failed result entry
+            result = {
+                "status": "Failed",
+                "test_id": test.get('test_id', None),
+                "exp_id": test.get('exp_id', None),
+                "error_message": "'experiment_data' field is missing in the JSON configuration.",
+                "execution_timestamp": datetime.now().isoformat()
+            }
+            completed_tests.append(result)
+            continue
+
+        # Ensure experiment_data is a dictionary
+        if not isinstance(experiment_data, dict):
+            print(f"Error: Test {exp_id}-{test_id} has invalid 'experiment_data' format. Moving to results as Failed.")
+            # Create a failed result entry
+            result = {
+                "status": "Failed",
+                "test_id": test.get('test_id', None),
+                "exp_id": test.get('exp_id', None),
+                "error_message": "'experiment_data' is not a valid dictionary.",
+                "execution_timestamp": datetime.now().isoformat()
+            }
+            completed_tests.append(result)
+            continue
+
+        # Pass the entire test dictionary to train_model
+        try:
+            train_dataset, test_dataset = get_cifar10_datasets(experiment_data.get('normalization', None))
+
+            result_json = train_model(test, train_dataset, test_dataset)
+            result = json.loads(result_json)
+
+            # Check the status and handle accordingly
+            status = result.get('status', 'Failed')
+            if status == 'Success':
+                print(f"Test {exp_id}-{test_id} completed successfully.")
+            elif status == 'Partial':
+                print(f"Test {exp_id}-{test_id} completed partially.")
+            elif status == 'Failed':
+                print(f"Test {exp_id}-{test_id} failed: {result.get('error_message', 'Unknown error.')}")
+            else:
+                print(f"Test {exp_id}-{test_id} returned an unknown status: {status}")
+
+            # Append the result to completed_tests regardless of status
+            completed_tests.append(result)
+
+        except json.JSONDecodeError:
+            print(f"Error: Received invalid JSON response for Test {exp_id}-{test_id}. Moving to results as Failed.")
+            # Create a failed result entry
+            result = {
+                "status": "Failed",
+                "test_id": test.get('test_id', None),
+                "exp_id": test.get('exp_id', None),
+                "error_message": "Invalid JSON response from train_model.",
+                "execution_timestamp": datetime.now().isoformat()
+            }
+            completed_tests.append(result)
+        except Exception as e:
+            print(f"Error executing Test {exp_id}-{test_id}: {e}. Moving to results as Failed.")
+            # Create a failed result entry
+            result = {
+                "status": "Failed",
+                "test_id": test.get('test_id', None),
+                "exp_id": test.get('exp_id', None),
+                "error_message": f"Unexpected error: {str(e)}",
+                "execution_timestamp": datetime.now().isoformat()
+            }
+            completed_tests.append(result)
+
+    # Determine which tests were successfully run (Success or Partial)
+    successfully_run_tests = [test for test in selected_tests if any(
+        (result.get('test_id') == test.get('test_id') and result.get('exp_id') == test.get('exp_id'))
+        for result in completed_tests
+    )]
+
+    return completed_tests, successfully_run_tests

@@ -1,6 +1,7 @@
 import os
 from HttpClient.client_test_runner import execute_loaded_tests
 from HttpClient.fetch_tests import fetch_tests_menu
+from HttpClient.generate_slurm_tests import split_loaded_tests
 from HttpClient.methods import *
 from HttpClient.server_upload import upload_to_server
 from HttpClient.sql_requests import view_datasets_on_server
@@ -27,6 +28,7 @@ Main Menu:
 5. Load Dataset to Server
 6. View datasets on the server
 7. Show tests results
+8. Split tests for slurm
 0. Exit
 -------------------------------------
         """)
@@ -46,6 +48,8 @@ Main Menu:
             view_datasets_on_server()
         elif choice == "7":
             test_results()
+        elif choice == "8":
+            split_loaded_tests()
         elif choice == "0":
             print("Exiting... Goodbye!")
             break
