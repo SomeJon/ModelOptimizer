@@ -242,7 +242,7 @@ def first_gen(request_json, num, dataset_id, model, focus):
                     "layer_type": "Dense",
                     "activation_fn": "ReLU",
                     "weight_initiations": "Xavier Initialization",
-                    "input": "(57600)",
+                    "input": "57600",
                     "output": 128,
                     "dropout_rate": "None",
                     "layer_fields": {"units": 128}

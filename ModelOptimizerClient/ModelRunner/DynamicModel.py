@@ -1,4 +1,5 @@
 import warnings
+
 warnings.filterwarnings("ignore", category=FutureWarning)
 import json
 import torch
@@ -7,6 +8,25 @@ import torch.optim as optim
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, Normalizer
 
 torch.manual_seed(0)
+
+
+def sanitize_string(value, to_lower=True):
+    """
+    Sanitizes a string by stripping surrounding quotes and whitespace.
+
+    Args:
+        value (str): The string to sanitize.
+        to_lower (bool): Whether to convert the string to lowercase for uniformity.
+
+    Returns:
+        str: The sanitized string, or 'none' if the input is None.
+    """
+    if isinstance(value, str):
+        sanitized = value.strip().strip('\'"')
+        return sanitized.lower() if to_lower else sanitized
+    elif value is None:
+        return 'none'
+    return value
 
 
 class DynamicModel(nn.Module):
@@ -36,14 +56,21 @@ class DynamicModel(nn.Module):
         self.batch_size = experiment.get('batch_size', 32)
         self.epochs = experiment.get('epochs', 10)
         self.learning_rate = experiment.get('learning_rate', 0.001)
-        self.loss_fn_name = experiment.get('loss_fn', 'Cross Entropy Loss')
-        self.normalization = experiment.get('normalization', 'None')
-        self.optimization = experiment.get('optimization', 'Adam')
+
+        # Sanitize loss function
+        self.loss_fn_name = sanitize_string(experiment.get('loss_fn', 'Cross Entropy Loss')).title()
+
+        # Sanitize normalization without altering case
+        self.normalization = sanitize_string(experiment.get('normalization', 'None'), to_lower=False)
+
+        # Sanitize optimization
+        self.optimization = sanitize_string(experiment.get('optimization', 'Adam')).title()
+
         self.optimization_fields = experiment.get('optimization_fields', {})
         self.weight_decay = experiment.get('weight_decay', 0.0)
 
         # Initialize current_shape to None
-        self.current_shape = None
+        self.current_shape = None  # Will be a tuple (H, W, C) for Conv layers or int for Dense layers
 
         # Define number of classes (assuming CIFAR-10; adjust as needed)
         self.num_classes = 10  # You can make this dynamic based on your dataset
@@ -65,107 +92,191 @@ class DynamicModel(nn.Module):
         self.validate_configuration()
 
     def build_layers(self, layer_configs):
-        for layer in layer_configs:
-            layer_type = layer['layer_type']
-            activation_fn = layer.get('activation_fn', None)
+        MAX_CHANNELS = 1024  # Example cap to prevent memory issues
+
+        for idx, layer in enumerate(layer_configs):
+            layer_type_raw = layer.get('layer_type', '').strip()
+            layer_type = sanitize_string(layer_type_raw).title()
+            activation_fn_raw = layer.get('activation_fn', 'None')
+            activation_fn_sanitized = sanitize_string(activation_fn_raw)
+            activation_fn = activation_fn_sanitized.title()
             dropout_rate = layer.get('dropout_rate', None)
             layer_fields = layer.get('layer_fields', {})
             input_spec = layer.get('input')
             output_spec = layer.get('output')
 
-            # Convert string specifications to actual values
-            input_parsed = self.parse_spec(input_spec)
-            output_parsed = self.parse_spec(output_spec)
-
             if layer_type == 'Input':
-                # Store the input shape for future reference
+                # Initialize current_shape based on input
+                input_parsed = self.parse_spec(input_spec)
                 if isinstance(input_parsed, tuple):
                     self.current_shape = input_parsed  # (H, W, C)
                 else:
                     raise ValueError(f"Invalid input specification: {input_spec}")
                 continue  # Skip adding Input layer to nn.ModuleList
-            elif layer_type == 'CNN':
+
+            elif layer_type == 'Cnn':
+                if not isinstance(self.current_shape, tuple):
+                    raise ValueError(
+                        f"CNN layer cannot be added before an Input layer or after a Dense layer. Current shape: {self.current_shape}")
+
                 in_channels = layer_fields.get('in_channels')
                 out_channels = layer_fields.get('out_channels')
-                kernel_size = layer_fields.get('kernel_size')
+                kernel_size = layer_fields.get('kernel_size', 3)
                 stride = layer_fields.get('stride', 1)
                 padding = layer_fields.get('padding', 0)
+
+                if in_channels is None or out_channels is None:
+                    raise ValueError(
+                        f"Missing 'in_channels' or 'out_channels' in layer_fields for CNN layer at index {idx}.")
+
+                # Cap the out_channels to prevent memory issues
+                if out_channels > MAX_CHANNELS:
+                    print(
+                        f"Layer {idx}: 'out_channels' ({out_channels}) exceeds the maximum limit ({MAX_CHANNELS}). Adjusting to {MAX_CHANNELS}.")
+                    out_channels = MAX_CHANNELS
+                    layer_fields['out_channels'] = out_channels
+
                 conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
                 self.layers.append(conv)
-                # Update current shape
-                self.current_shape = self.compute_conv_output_shape(self.current_shape, kernel_size, stride, padding)
+
+                # Update current_shape
+                self.current_shape = self.compute_conv_output_shape(
+                    self.current_shape, kernel_size, stride, padding
+                )
+
             elif layer_type == 'Pooling':
-                pool_type = layer_fields.get('pool_type', 'max').lower().strip("'")
+                if not isinstance(self.current_shape, tuple):
+                    raise ValueError(
+                        f"Pooling layer cannot be added before an Input layer or after a Dense layer. Current shape: {self.current_shape}")
+
+                pool_type_raw = layer_fields.get('pool_type', 'max')
+                # Sanitize pool_type by stripping any surrounding quotes and converting to lowercase
+                pool_type = sanitize_string(pool_type_raw)
+
                 pool_size = layer_fields.get('pool_size', 2)
-                stride = layer_fields.get('stride', 2)
-                if isinstance(pool_size, str):
-                    pool_size = self.parse_spec(pool_size)
+                stride = layer_fields.get('stride', pool_size)  # Default stride equals pool_size
+
                 if pool_type == 'max':
                     pool = nn.MaxPool2d(kernel_size=pool_size, stride=stride)
-                elif pool_type == 'average':
+                elif pool_type in ['average', 'avg']:
                     pool = nn.AvgPool2d(kernel_size=pool_size, stride=stride)
                 else:
-                    raise ValueError(f"Unsupported pool type: {pool_type}")
+                    raise ValueError(f"Unsupported pool type: '{pool_type_raw}' in Pooling layer at index {idx}.")
+
                 self.layers.append(pool)
-                # Update current shape
-                self.current_shape = self.compute_pool_output_shape(self.current_shape, pool_size, stride)
-            elif layer_type == 'Dense':
-                units = layer_fields.get('units')
-                if isinstance(input_parsed, tuple):
-                    # Flatten the tuple to compute input_dim
-                    input_dim = 1
-                    for dim in input_parsed:
-                        input_dim *= dim
-                else:
-                    input_dim = input_parsed
-                dense = nn.Linear(input_dim, units)
-                self.layers.append(dense)
-                self.current_shape = units  # Update current shape
-            elif layer_type == 'BatchNorm':
-                num_features = layer_fields.get('num_features') or layer_fields.get('out_channels') or (
-                    self.current_shape[-1] if isinstance(self.current_shape, tuple) else self.current_shape)
-                # Determine if BatchNorm1d or BatchNorm2d based on current_shape
+
+                # Update current_shape
+                self.current_shape = self.compute_pool_output_shape(
+                    self.current_shape, pool_size, stride
+                )
+
+            elif layer_type == 'Batchnorm':
+                if not isinstance(self.current_shape, tuple):
+                    raise ValueError(
+                        f"BatchNorm layer cannot be added before an Input layer or after a Dense layer. Current shape: {self.current_shape}")
+
+                num_features = layer_fields.get('num_features', None)
+                if num_features is None:
+                    num_features = self.current_shape[2]  # Assuming (H, W, C)
+
                 if isinstance(self.current_shape, tuple):
                     # Assuming [H, W, C], use BatchNorm2d
                     batch_norm = nn.BatchNorm2d(num_features)
                 else:
                     # Assuming [batch_size, features], use BatchNorm1d
                     batch_norm = nn.BatchNorm1d(num_features)
+
                 self.layers.append(batch_norm)
+
             elif layer_type == 'Dropout':
                 rate = layer_fields.get('rate', 0.5)
                 dropout = nn.Dropout(p=rate)
                 self.layers.append(dropout)
+
+            elif layer_type == 'Dense':
+                # Before adding Dense layers, ensure that current_shape is flattened
+                if isinstance(self.current_shape, tuple):
+                    # Insert Flatten layer
+                    self.layers.append(nn.Flatten())
+                    input_dim = self.current_shape[0] * self.current_shape[1] * self.current_shape[2]
+                    self.current_shape = input_dim  # Now it's an integer
+                elif isinstance(self.current_shape, int):
+                    input_dim = self.current_shape
+                else:
+                    raise ValueError(f"Invalid current_shape: {self.current_shape} before Dense layer.")
+
+                units = layer_fields.get('units', None)
+                if units is None:
+                    raise ValueError(f"Missing 'units' in layer_fields for Dense layer at index {idx}.")
+
+                dense = nn.Linear(input_dim, units)
+                self.layers.append(dense)
+
+                # Update current_shape
+                self.current_shape = units
+
             elif layer_type == 'Output':
+                # Handle Output layer based on loss function
+                output_units_raw = layer_fields.get('output_shape', self.num_classes)
                 output_units = layer_fields.get('output_shape', self.num_classes)
+
                 if isinstance(output_units, str):
                     output_units = self.parse_spec(output_units)
-                # Add a Linear layer to map from current feature size to output units
-                if isinstance(self.current_shape, tuple):
-                    # Flatten the current shape
-                    input_dim = 1
-                    for dim in self.current_shape:
-                        input_dim *= dim
-                    linear = nn.Linear(input_dim, output_units)
-                    self.layers.append(linear)
-                    self.current_shape = output_units
+                elif isinstance(output_units, (int, float)):
+                    output_units = int(output_units)
                 else:
-                    # If current_shape is already an integer
-                    linear = nn.Linear(self.current_shape, output_units)
-                    self.layers.append(linear)
-                    self.current_shape = output_units
-                # Conditionally add activation function based on loss function
-                if self.loss_fn_name != 'Cross Entropy Loss' and activation_fn and activation_fn != 'None':
-                    activation = self.get_activation_fn(activation_fn)
-                    if activation:
-                        self.layers.append(activation)
-                # For Cross Entropy Loss, typically no activation is added here
+                    raise ValueError(f"Invalid 'output_shape' format: {output_units}")
+
+                # Adjust output_units based on loss function if necessary
+                if self.loss_fn_name == 'Mean Squared Error':
+                    # For MSE, ensure output units match num_classes (for classification)
+                    output_units = self.num_classes
+
+                # If current_shape is still a tuple, flatten it
+                if isinstance(self.current_shape, tuple):
+                    self.layers.append(nn.Flatten())
+                    input_dim = self.current_shape[0] * self.current_shape[1] * self.current_shape[2]
+                    self.current_shape = input_dim
+                elif isinstance(self.current_shape, int):
+                    input_dim = self.current_shape
+                else:
+                    raise ValueError(f"Invalid current_shape: {self.current_shape} before Output layer.")
+
+                linear = nn.Linear(input_dim, output_units)
+                self.layers.append(linear)
+                self.current_shape = output_units
+
+                # Adjust activation based on loss function
+                if self.loss_fn_name == 'Cross Entropy Loss':
+                    # For Cross Entropy, typically no activation (LogSoftmax is included in loss)
+                    pass
+                elif self.loss_fn_name == 'Mean Squared Error':
+                    # For MSE, you might want no activation or sigmoid depending on task
+                    pass
+                elif self.loss_fn_name == 'Binary Cross Entropy':
+                    # For BCE, apply Sigmoid activation
+                    if activation_fn == 'sigmoid':
+                        activation = self.get_activation_fn('Sigmoid')
+                        if activation:
+                            self.layers.append(activation)
+                    elif activation_fn == 'none':
+                        pass
+                    else:
+                        raise ValueError(
+                            f"Unsupported activation function '{activation_fn}' for Binary Cross Entropy Loss.")
+                else:
+                    # Add activation if specified and not 'None'
+                    if activation_fn != 'None':
+                        activation = self.get_activation_fn(activation_fn)
+                        if activation:
+                            self.layers.append(activation)
+
             else:
-                raise ValueError(f"Unsupported layer type: {layer_type}")
+                raise ValueError(f"Unsupported layer type: {layer_type_raw} at index {idx}.")
 
             # Add activation function if specified and not 'None', excluding Output layer
-            if layer_type != 'Output':
-                if activation_fn and activation_fn != 'None':
+            if layer_type not in ['Output', 'Pooling', 'Batchnorm']:
+                if activation_fn != 'None':
                     activation = self.get_activation_fn(activation_fn)
                     if activation:
                         self.layers.append(activation)
@@ -250,7 +361,7 @@ class DynamicModel(nn.Module):
 
     def get_activation_fn(self, name):
         activations = {
-            'ReLU': nn.ReLU(),
+            'Relu': nn.ReLU(),
             'Tanh': nn.Tanh(),
             'Sigmoid': nn.Sigmoid(),
             'Softmax': nn.Softmax(dim=1),
@@ -277,7 +388,7 @@ class DynamicModel(nn.Module):
     def get_optimizer(self, parameters):
         optimizers = {
             'Adam': optim.Adam,
-            'SGD': optim.SGD,
+            'Sgd': optim.SGD,
             # Add more optimizers as needed
         }
         optimizer_cls = optimizers.get(self.optimization, None)
@@ -293,7 +404,7 @@ class DynamicModel(nn.Module):
             epsilon = self.optimization_fields.get('epsilon', 1e-08)
             optimizer_params['betas'] = (beta1, beta2)
             optimizer_params['eps'] = epsilon
-        elif self.optimization == 'SGD':
+        elif self.optimization == 'Sgd':
             # SGD might have momentum, nesterov, etc.
             momentum = self.optimization_fields.get('momentum', 0.0)
             nesterov = self.optimization_fields.get('nesterov', False)
@@ -342,6 +453,8 @@ class DynamicModel(nn.Module):
             # Assuming x is a NumPy array; convert to tensor after scaling
             x = self.scaler.transform(x)
             x = torch.tensor(x, dtype=torch.float32)
+        else:
+            x = torch.tensor(x, dtype=torch.float32)
         return x
 
     def validate_configuration(self):
@@ -385,12 +498,20 @@ class DynamicModel(nn.Module):
             last_activation = None
             for layer in reversed(self.layers):
                 if isinstance(layer, nn.ReLU) or isinstance(layer, nn.Tanh) \
-                   or isinstance(layer, nn.Sigmoid) or isinstance(layer, nn.Softmax):
+                        or isinstance(layer, nn.Sigmoid) or isinstance(layer, nn.Softmax):
                     last_activation = layer.__class__.__name__
                     break
 
-        # Specific handling for 'Mean Squared Error'
-        if current_loss_fn == 'Mean Squared Error':
+        # Specific handling based on loss function
+        if current_loss_fn == 'Cross Entropy Loss':
+            # Ensure no activation function is present after the Output layer
+            if last_activation is not None:
+                raise ValueError(
+                    f"Loss Function '{current_loss_fn}' expects no activation function in the Output layer, "
+                    f"but found '{last_activation}'. Remove the activation function from the Output layer."
+                )
+
+        elif current_loss_fn == 'Mean Squared Error':
             # Ensure the final layer outputs 'num_classes' units
             if not isinstance(last_layer, nn.Linear) or last_layer.out_features != self.num_classes:
                 # Remove the incorrect final layer if present
@@ -420,8 +541,17 @@ class DynamicModel(nn.Module):
                     if activation:
                         self.layers.append(activation)
                         print(f"Added activation function '{expected_activation}' to the model.")
+
+        elif current_loss_fn == 'Binary Cross Entropy':
+            # Ensure the final activation function is Sigmoid
+            if last_activation != 'Sigmoid':
+                raise ValueError(
+                    f"Loss Function '{current_loss_fn}' expects 'Sigmoid' activation in the Output layer, "
+                    f"but found '{last_activation}'. Adjust the Output layer's activation function accordingly."
+                )
+
         else:
-            # Handle other loss functions as before
+            # Handle other loss functions as needed
             if expected_activation:
                 if last_activation != expected_activation:
                     raise ValueError(
@@ -437,26 +567,20 @@ class DynamicModel(nn.Module):
                         f"but found '{last_activation}'."
                     )
 
-            # Validate output layer
-            output_layer = self.layers[-1]
-            if isinstance(output_layer, nn.Linear):
-                output_units = output_layer.out_features
-                if label_format == 'class_indices' and output_units < 2:
-                    raise ValueError(
-                        f"Loss Function '{current_loss_fn}' expects at least 2 output units for multi-class classification."
-                    )
-                # Additional checks can be added based on label_format
-            else:
-                raise ValueError("The last layer must be a Linear (Output) layer.")
+        # Validate output layer
+        output_layer = self.layers[-1]
+        if isinstance(output_layer, nn.Linear):
+            output_units = output_layer.out_features
+            if label_format == 'class_indices' and output_units < 2:
+                raise ValueError(
+                    f"Loss Function '{current_loss_fn}' expects at least 2 output units for multi-class classification."
+                )
+            # Additional checks can be added based on label_format
+        else:
+            raise ValueError("The last layer must be a Linear (Output) layer.")
 
         # Informative message upon successful validation
         print("Model configuration validated successfully.")
-
-    def initialize_optimizer(self):
-        """
-        Initializes the optimizer. Should be called after model initialization.
-        """
-        self.optimizer = self.get_optimizer(self.parameters())
 
 
 def get_DynamicModel(json_input):
