@@ -170,7 +170,8 @@ def show_more_data_of_test_result():
             test.epochs_trained, 
             test.date AS test_done_date,
             experiment.date AS experiment_date, 
-            experiment.based_on
+            experiment.based_on,
+            experiment.modification_text
         FROM 
             test
         JOIN 
@@ -274,6 +275,7 @@ def show_more_data_of_test_result():
             experiment_date = get_field('experiment_date')
             based_on = get_field('based_on')
             test_done_date = get_field('test_done_date')
+            modification_text = get_field('modification_text')
 
             additional_stats = f"Date of test: {test_done_date}\n" \
                                f"It is based on: {based_on}\n" \
@@ -283,6 +285,7 @@ def show_more_data_of_test_result():
                                f"Train data score: {train_data_score}\n" \
                                f"Test loss: {test_loss}\n" \
                                f"Bias: {bias}\n" \
+                               f"Focus: {modification_text}\n" \
                                f"epochs trained: {epochs_trained}\n"
 
             format_section("Statistics", additional_stats)
