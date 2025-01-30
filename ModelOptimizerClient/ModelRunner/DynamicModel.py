@@ -4,7 +4,6 @@ import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, Normalizer
 
 torch.manual_seed(0)
 
@@ -59,9 +58,6 @@ class DynamicModel(nn.Module):
         # Sanitize loss function
         self.loss_fn_name = sanitize_string(experiment.get('loss_fn', 'Cross Entropy Loss')).title()
 
-        # Sanitize normalization without altering case
-        self.normalization = sanitize_string(experiment.get('normalization', 'None'), to_lower=False)
-
         # Sanitize optimization
         self.optimization = sanitize_string(experiment.get('optimization', 'Adam')).title()
 
@@ -83,9 +79,6 @@ class DynamicModel(nn.Module):
 
         # Initialize optimizer as None; to be set during training
         self.optimizer = None
-
-        # Handle normalization
-        self.scaler = self.get_scaler(self.normalization)
 
         # Perform validation
         self.validate_configuration()
@@ -441,18 +434,6 @@ class DynamicModel(nn.Module):
         optimizer_params['weight_decay'] = self.weight_decay
 
         return optimizer_cls(parameters, **optimizer_params)
-
-    def get_scaler(self, name):
-        scalers = {
-            'StandardScaler': StandardScaler(),
-            'MinMaxScaler': MinMaxScaler(),
-            'Normalizer': Normalizer(),
-            'None': None
-        }
-        scaler = scalers.get(name, None)
-        if scaler is None and name != 'None':
-            raise ValueError(f"Unsupported normalization: {name}")
-        return scaler
 
     def forward(self, x):
         for layer in self.layers:

@@ -1,0 +1,6 @@
+requests~=2.32.3
+prettytable~=3.13.0
+python-dotenv~=1.0.1
+torch~=2.5.1+cu118
+argparse~=1.4.0
+torchvision~=0.20.1+cu118

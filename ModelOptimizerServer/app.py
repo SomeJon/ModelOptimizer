@@ -80,7 +80,7 @@ def execute_sql():
 def generate_request():
     try:
         # Retrieve query parameters
-        num = int(request.args.get('num'))
+        num = int(request.args.get('num', 5))
         dataset_id = int(request.args.get('dataset_id'))
         focus = request.args.get('focus')
         num_of_based = int(request.args.get('num_of_based'))
@@ -96,7 +96,7 @@ def generate_request():
         if not request_data.get("reference_experiments"):
             new_experiments = first_gen(request_data, num, dataset_id, model, focus)
         else:
-            new_experiments = send_openai_request(request_data, model, focus)
+            new_experiments = send_openai_request(request_data, model, focus, num)
 
         # Insert these experiments into DB
         inserted_count = insert_experiments_to_db(new_experiments, dataset_id, focus)

@@ -19,7 +19,7 @@ def main(config_path, output_dir):
     completed_tests = []
 
     # Run all tests
-    pending_tests, completed_tests = run_tests(pending_tests, completed_tests)
+    completed_tests, successful_tests = run_tests(pending_tests, completed_tests)
 
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -35,6 +35,8 @@ def main(config_path, output_dir):
         json.dump(completed_tests, f, indent=4)
 
     print(f"Results saved to {results_path}")
+
+    return completed_tests
 
 
 if __name__ == "__main__":

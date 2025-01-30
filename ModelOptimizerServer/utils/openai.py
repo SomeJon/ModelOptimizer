@@ -2,11 +2,13 @@ import json
 from utils.CustomChatCompletion import CustomChatCompletion
 
 
-def send_openai_request(request_json, model, focus):
+def send_openai_request(request_json, model, focus, num):
     """
     Sends requests to OpenAI API for each reference experiment in the input JSON,
     asking the model to generate new compact-format machine learning experiments.
 
+    :param num: number to generate
+    :param focus: main focus
     :param request_json: JSON structure or JSON string for the OpenAI request.
     :param model: The model to use (e.g., "gpt-3.5-turbo" or "gpt-4").
     :return: A dictionary containing a list of parsed experiments under "experiments".
@@ -102,7 +104,7 @@ def send_openai_request(request_json, model, focus):
                             {
                                 "role": "user",
                                 "content": (
-                                    "Generate 5 new machine learning experiments in the above format.\n\n"
+                                    f"Generate {num} new machine learning experiments in the above format.\n\n"
                                     "**Primary Objective:**\n"
                                     f"- **Focus:** {focus}.\n\n"
                                     "**Secondary Instructions:**\n"

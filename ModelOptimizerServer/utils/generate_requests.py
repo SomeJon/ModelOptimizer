@@ -270,7 +270,7 @@ def first_gen(request_json, num, dataset_id, model, focus):
         request_json["reference_experiments"].append(example_json)
 
         # Send to OpenAI API
-        openai_response = send_openai_request(request_json, model, focus)
+        openai_response = send_openai_request(request_json, model, focus, num)
         return openai_response
 
     except Exception as e:
