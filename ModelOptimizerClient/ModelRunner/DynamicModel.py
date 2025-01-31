@@ -89,7 +89,7 @@ class DynamicModel(nn.Module):
         self.validate_configuration()
 
     def build_layers(self, layer_configs):
-        MAX_CHANNELS = 512  # Reduced from 1024 to prevent excessive memory usage
+        MAX_CHANNELS = 1024
         previous_out_channels = None  # To track the last layer's out_channels
 
         for idx, layer in enumerate(layer_configs):

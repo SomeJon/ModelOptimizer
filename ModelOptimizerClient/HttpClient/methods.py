@@ -131,18 +131,24 @@ def generate_new_tests():
 
         # Choose the model to use
         print("\nChoose the model to use:")
-        print("1. GPT-4 Turbo (default)")
-        print("2. GPT-3.5 Turbo")
-        print("3. GPT-4")
-        model_choice = input("Enter your choice (1, 2, or 3): ").strip()
+        print("1. GPT-4o-mini (default)")
+        print("2. GPT-4o")
+        print("3. GPT-4 Turbo")
+        print("4. GPT-3.5 Turbo")
+        print("5. GPT-4")
+        model_choice = input("Enter your choice (1, to 5): ").strip()
 
         # Set the model based on user choice
         if model_choice == "2":
-            model = "gpt-3.5-turbo"
+            model = "gpt-4o"
         elif model_choice == "3":
+            model = "gpt-4-turbo"
+        elif model_choice == "4":
+            model = "gpt-3.5-turbo"
+        elif model_choice == "5":
             model = "gpt-4"
         else:
-            model = "gpt-4-turbo"  # Default to GPT-4 Turbo
+            model = "gpt-4o-mini"  # Default to gpt-4o-mini
 
         # Send the request to the server
         print("\nSending request to the server...")
