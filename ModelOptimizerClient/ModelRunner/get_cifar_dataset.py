@@ -24,16 +24,17 @@ def get_cifar10_datasets(normalization='None', train_ratio=0.8):
         transforms.ToTensor(),
     ]
 
-    if normalization == 'StandardScaler':
+    if normalization is None or normalization == 'None':
+        pass  # No normalization applied
+    elif normalization == 'StandardScaler':
         transform_list.append(transforms.Normalize(cifar10_mean, cifar10_std))
     elif normalization == 'MinMaxScaler':
         # ToTensor already scales inputs to [0, 1]
         pass  # No additional transform needed
     elif normalization == 'Normalizer':
-        # Normalizer scales input vectors individually to unit norm
+        # The Normalizer transform usually expects a custom callable,
+        # but here we're just adding a dummy Normalize as an example.
         transform_list.append(transforms.Normalize(mean=[0., 0., 0.], std=[1., 1., 1.]))
-    elif normalization == 'None':
-        pass  # No normalization
     else:
         raise ValueError(f"Unsupported normalization type: {normalization}")
 
