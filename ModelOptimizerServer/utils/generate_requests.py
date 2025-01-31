@@ -127,6 +127,14 @@ def create_request_json(num, dataset_id, num_of_based):
         cursor.execute("SELECT layer_type, layer_fields FROM layer_type")
         layer_types = {row["layer_type"]: json.loads(row["layer_fields"]) for row in cursor.fetchall()}
 
+        # Fetch Activation fn
+        cursor.execute("SELECT activation_fn FROM activation_fn")
+        activation_fn_options = [row["activation_fn"] for row in cursor.fetchall()]
+
+        # Fetch weight_initiations
+        cursor.execute("SELECT weight_initiations FROM weight_initiations")
+        weight_initiations_options = [row["weight_initiations"] for row in cursor.fetchall()]
+
         # Step 4: Build the JSON
         request_json = {
             "instructions": {
@@ -135,6 +143,8 @@ def create_request_json(num, dataset_id, num_of_based):
             },
             "options": {
                 "loss_fn": loss_fn_options,
+                "activation_fn": activation_fn_options,
+                "weight_initiations": weight_initiations_options,
                 "optimization": list(optimization_fields.keys()),
                 "normalization": normalization_options,
                 "layer_types": layer_types,

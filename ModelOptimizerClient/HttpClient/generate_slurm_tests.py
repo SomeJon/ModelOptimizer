@@ -4,8 +4,8 @@ import math
 
 LOADED_TESTS_PATH = './data/loaded_tests.json'
 SLURM_TESTS_DIR = "./slurm_tests"
-TESTS_PER_FILE = 85  # Adjust as needed
-START_NUMBER = 9
+TESTS_PER_FILE = 100  # Adjust as needed
+START_NUMBER = 11
 
 
 def split_loaded_tests():
