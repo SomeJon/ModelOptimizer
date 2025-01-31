@@ -211,13 +211,14 @@ def compact_to_json(compact_str: str) -> dict:
     def parse_value(s: str):
         s = s.strip()
         # Optionally turn "None" into actual None:
-        if s == "None":
-            return "None"  # or return None
-        # Try numeric:
+        if s.lower() == "none":
+            return None
+        # Try integer:
         try:
             return int(s)
         except ValueError:
             pass
+        # Try float:
         try:
             return float(s)
         except ValueError:
@@ -253,6 +254,15 @@ def compact_to_json(compact_str: str) -> dict:
 
         return result
 
+    def remove_code_block_markers(s: str) -> str:
+        """
+        Removes code block markers (e.g., ```) from the string.
+        """
+        return s.replace('```', '').strip()
+
+    # Step 1: Remove code block markers if present
+    compact_str = remove_code_block_markers(compact_str)
+
     result = {}
     # Split top-level by ';'
     top_fields = [fld.strip() for fld in compact_str.split(";") if fld.strip()]
@@ -281,13 +291,16 @@ def compact_to_json(compact_str: str) -> dict:
                     sub_val = sub_val.strip()
 
                     if sub_key == "layer_fields":
-                        # plus-separated
-                        lf_dict = {}
-                        for pair in sub_val.split("+"):
-                            if "=" in pair:
-                                pk, pv = pair.split("=", 1)
-                                lf_dict[pk.strip()] = parse_value(pv.strip())
-                        layer_dict["layer_fields"] = lf_dict
+                        if sub_val:  # Ensure there are layer_fields to parse
+                            # plus-separated
+                            lf_dict = {}
+                            for pair in sub_val.split("+"):
+                                if "=" in pair:
+                                    pk, pv = pair.split("=", 1)
+                                    lf_dict[pk.strip()] = parse_value(pv.strip())
+                            layer_dict["layer_fields"] = lf_dict
+                        else:
+                            layer_dict["layer_fields"] = {}
                     else:
                         layer_dict[sub_key] = parse_value(sub_val)
 
@@ -307,4 +320,10 @@ def compact_to_json(compact_str: str) -> dict:
             # normal top-level (including epochs)
             result[key] = parse_value(val)
 
+    # Step 2: Check if the result is empty
+    if not result:
+        raise ValueError("Parsed result is empty. Please check the input format.")
+
+    #print("After parsing to json:", result)
     return result
+
