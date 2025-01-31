@@ -4,7 +4,8 @@ import math
 
 LOADED_TESTS_PATH = './data/loaded_tests.json'
 SLURM_TESTS_DIR = "./slurm_tests"
-TESTS_PER_FILE = 10  # Adjust as needed
+TESTS_PER_FILE = 85  # Adjust as needed
+START_NUMBER = 9
 
 
 def split_loaded_tests():
@@ -23,7 +24,7 @@ def split_loaded_tests():
         end_idx = start_idx + TESTS_PER_FILE
         slurm_tests = loaded_tests[start_idx:end_idx]
 
-        slurm_tests_filename = f"slurm_tests{i+1}.json"
+        slurm_tests_filename = f"slurm_tests{i+START_NUMBER}.json"
         slurm_tests_path = os.path.join(SLURM_TESTS_DIR, slurm_tests_filename)
 
         with open(slurm_tests_path, 'w') as f:
