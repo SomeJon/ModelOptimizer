@@ -84,7 +84,7 @@ def generate_request():
         dataset_id = int(request.args.get('dataset_id'))
         focus = request.args.get('focus')
         num_of_based = int(request.args.get('num_of_based'))
-        model = request.args.get('model', 'gpt-4-turbo')  # default model
+        model = request.args.get('model', 'gpt-4o')  # default model
 
         # Prepare the request JSON for generation
         request_json = create_request_json(num, dataset_id, num_of_based)

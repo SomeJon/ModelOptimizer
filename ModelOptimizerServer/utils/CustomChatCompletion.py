@@ -31,6 +31,7 @@ class CustomChatCompletion:
         }
 
         try:
+            print(payload)
             response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()  # Raise an error for bad HTTP responses
             return response.json()
