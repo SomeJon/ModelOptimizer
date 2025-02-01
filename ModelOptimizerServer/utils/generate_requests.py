@@ -91,7 +91,7 @@ def create_request_json(num, dataset_id, num_of_based):
 
                 # Construct the reference experiment entry
                 reference_experiment = {
-                    "based_on_id": exp_id,  # Replace exp_id with based_on_id
+                    "based_on_id": exp_id,
                     "loss_fn": experiment_rows[0]["loss_fn"],
                     "optimization": experiment_rows[0]["optimization"],
                     "normalization": experiment_rows[0]["normalization"],
@@ -100,6 +100,7 @@ def create_request_json(num, dataset_id, num_of_based):
                     "learning_rate": experiment_rows[0]["learning_rate"],
                     "min_delta": experiment_rows[0]["min_delta"],
                     "patience": experiment_rows[0]["patience"],
+                    "epochs": experiment_rows[0].get("epochs", 10),  # Ensure epochs is set
                     "layers": layers
                 }
 
