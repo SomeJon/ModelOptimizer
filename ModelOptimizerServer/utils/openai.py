@@ -106,6 +106,7 @@ def send_openai_request(request_json, model, focus, num):
                                     "- Attempt to generate new tests based on the `reference_experiments` with small changes.\n"
                                     "- All layers must include `input` and `output` fields.\n"
                                     "- Use `based_on_id:0` for brand-new experiments or `based_on_id:X` when referencing an existing ID.\n"
+                                    "- If you have a referenced experiment, input his exp_id in the generated based_on_id"
                                     "- Do not include any extra text or JSON.\n\n"
                                     f"**Request:**\n{compact_request_json}"
                                 )
