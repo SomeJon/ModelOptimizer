@@ -502,8 +502,7 @@ def insert_experiments_to_db(experiments, dataset_id, modification_text):
                             ))
                             layer_place += 1
 
-                        # Commit for this experiment is automatic with the context manager,
-                        # but you could also call connection.commit() here if not using "with".
+                        connection.commit()
                         inserted_count += 1
 
                     except Exception as e:

@@ -7,35 +7,32 @@ def send_openai_request(request_json, model, focus, num):
     Sends requests to OpenAI API for each reference experiment in the input JSON,
     asking the model to generate new compact-format machine learning experiments.
 
-    :param num: number to generate
-    :param focus: main focus
-    :param request_json: JSON structure or JSON string for the OpenAI request.
-    :param model: The model to use (e.g., "gpt-3.5-turbo" or "gpt-4").
+    :param num: Number of experiments to generate per reference.
+    :param focus: The main focus of the new experiments.
+    :param request_json: JSON structure (or JSON string) with the request details.
+    :param model: The model to use (e.g., "gpt-3.5-turbo", "gpt-4").
     :return: A dictionary containing a list of parsed experiments under "experiments".
     """
     try:
-        # Ensure Python dictionary
+        # Ensure the request is a Python dictionary.
         if isinstance(request_json, str):
             request_json = json.loads(request_json)
 
-        # Verify reference_experiments
+        # Verify that reference_experiments is provided.
         if "reference_experiments" not in request_json or not request_json["reference_experiments"]:
             raise ValueError("No reference_experiments found in the input JSON.")
 
-        # How many experiments to generate for each reference
+        # Number of experiments to generate per reference.
         num_tests = request_json.get("num_tests", 1)
 
-        # Copy any other request fields
-        base_request_data = {
-            k: v for k, v in request_json.items() if k != "reference_experiments"
-        }
+        # Copy other request fields except for reference_experiments.
+        base_request_data = {k: v for k, v in request_json.items() if k != "reference_experiments"}
 
         all_experiments = []
 
-        # Process each reference experiment
+        # Process each reference experiment.
         for ref_exp in request_json["reference_experiments"]:
             try:
-                # Convert the reference experiment into a single-line compact format
                 compact_ref_exp = json_to_compact(ref_exp)
             except ValueError as e:
                 print(f"Error compacting reference experiment:\n{ref_exp}\nSkipping. Error: {e}")
@@ -43,7 +40,7 @@ def send_openai_request(request_json, model, focus, num):
 
             base_request_data["reference_experiments"] = [compact_ref_exp]
 
-            # Generate num_tests new experiments for this reference
+            # Generate num_tests new experiments for this reference.
             for _ in range(num_tests):
                 compact_request_json = json.dumps(base_request_data, indent=2)
 
@@ -55,52 +52,48 @@ def send_openai_request(request_json, model, focus, num):
                             {
                                 "role": "system",
                                 "content": (
-                                    "You are an assistant specialized in generating machine learning experiments in a single-line compact format.\n\n"
+                                    "You are an assistant specialized in generating machine learning experiments "
+                                    "in a single-line compact format.\n\n"
                                     "**Primary Objective:**\n"
                                     f"- **Focus:** {focus}.\n\n"
                                     "**Format Rules:**\n"
-                                    "1. **Top-level fields** are separated by semicolons (`;`):\n"
-                                    "`based_on_id`, `loss_fn`, `optimization`, `normalization`, `batch_size`, "
-                                    "`weight_decay`, `learning_rate`, `epochs`, `layers`, `optimization_fields`.\n"
-                                    "2. **`based_on_id`:** Set to `0` if the experiment is brand-new. If derived from "
-                                    "an existing experiment with ID X, set to `based_on_id:X`.\n"
-                                    "3. **Early Stopping Parameters:** Include `min_delta` and `patience` related to "
-                                    "early stopping.\n"
-                                    "4. **`layers`:** Each layer is a pipe-separated (`|`) string of comma-separated "
-                                    "key=value pairs. Nested fields (`layer_fields`) use plus-separated (`+`) "
-                                    "key=value pairs within the same comma-separated section.\n"
-                                    "5. **`optimization_fields`:** Plus-separated (`+`) key=value pairs, e.g., "
-                                    "`optimization_fields:beta1=0.9+beta2=0.999+epsilon=1e-8`.\n"
-                                    "6. **Layer Requirements:** Every layer must include both `input` and `output` "
-                                    "fields.\n"
-                                    "7. **`epochs`:** Must be included as a top-level field (default is `10` if not "
-                                    "specified).\n"
-                                    "8. **No Extra Text or JSON:** The output should strictly follow the specified "
-                                    "format. If multiple experiments are generated, place each on a new line.\n\n"
-                                    "**Example (4-layer CNN with Early Stopping):**\n"
+                                    "1. Top-level fields are separated by semicolons (`;`) in the following fixed order:\n"
+                                    "   based_on_id, loss_fn, optimization, normalization, batch_size, weight_decay, "
+                                    "learning_rate, epochs, min_delta, patience, layers, optimization_fields.\n"
+                                    "2. Each field is formatted as key:value (with no extra spaces).\n"
+                                    "3. The `layers` field consists of one or more layers separated by a pipe character (`|`).\n"
+                                    "   Each layer is a comma-separated list of key=value pairs.\n"
+                                    "4. For layers that support dropout, include the parameter `dropout_rate` within the layer's key=value pairs.\n"
+                                    "5. Nested fields (such as `layer_fields`) should be represented as plus-separated key=value pairs.\n"
+                                    "6. The `optimization_fields` should also be formatted as plus-separated key=value pairs.\n"
+                                    "7. Every layer must include both `input` and `output` fields.\n"
+                                    "8. Do not include any extra text or JSON outside the specified format. "
+                                    "If multiple experiments are generated, each should be on a separate line.\n\n"
+                                    "**Example (Multi-Layer Model with Dropout via dropout_rate):**\n"
                                     "```\n"
-                                    "based_on_id:0;loss_fn:Cross Entropy "
-                                    "Loss;optimization:Adam;min_delta:0.001;patience:2;normalization:StandardScaler;"
-                                    "batch_size=32;weight_decay=0.0001;learning_rate=0.001;epochs=10;layers:"
-                                    "layer_type=Input,activation_fn=None,input=(32,32,3),output=(32,32,3),"
-                                    "layer_fields=input_shape=(32,32,3)|"
-                                    "layer_type=CNN,activation_fn=ReLU,weight_initiations=Xavier Initialization,"
-                                    "input=(32,32,3),output=(30,30,64),dropout_rate=0.3,"
-                                    "layer_fields=kernel_size=3+stride=1+padding=2+in_channels=3+out_channels=64|"
-                                    "layer_type=Pooling,input=(30,30,64),output=(15,15,64),pool_type=max,"
-                                    "pool_size=2+stride=2|"
-                                    "layer_type=Dense,activation_fn=ReLU,weight_initiations=Xavier Initialization, "
-                                    "input=14400,output=128,dropout_rate=0.3,layer_fields=units=128|"
-                                    "layer_type=Output,activation_fn=Softmax,input=128,output=10,"
-                                    "layer_fields=output_shape=10;optimization_fields:beta1=0.9+beta2=0.999+epsilon"
-                                    "=1e-08\n"
+                                    "based_on_id:0;loss_fn:Cross Entropy Loss;optimization:Adam;min_delta:0.001;patience:2;"
+                                    "normalization:StandardScaler;batch_size:32;weight_decay:0.0001;learning_rate:0.001;"
+                                    "epochs:10;layers:"
+                                    "activation_fn=None,input=(32,32,3),dropout_rate=0.0,layer_fields=input_shape=(32,32,3),"
+                                    "layer_type=Input,output=(32,32,3)|"
+                                    "activation_fn=ReLU,input=(32,32,3),dropout_rate=0.2,layer_fields=in_channels=3+kernel_size=3+"
+                                    "out_channels=64+padding=1+stride=1,layer_type=CNN,weight_initiations=Xavier Initialization,"
+                                    "output=(30,30,64)|"
+                                    "activation_fn=ReLU,input=(30,30,64),dropout_rate=0.3,layer_fields=in_channels=64+kernel_size=3+"
+                                    "out_channels=128+padding=1+stride=1,layer_type=CNN,weight_initiations=Xavier Initialization,"
+                                    "output=(28,28,128)|"
+                                    "activation_fn=None,input=(28,28,128),dropout_rate=0.0,layer_fields=pool_type=max+pool_size=2+"
+                                    "stride=2,layer_type=Pooling,output=(14,14,128)|"
+                                    "activation_fn=ReLU,input=25088,dropout_rate=0.4,layer_fields=units=256,layer_type=Dense,"
+                                    "weight_initiations=Xavier Initialization,output=256|"
+                                    "activation_fn=Softmax,input=256,dropout_rate=0.0,layer_fields=output_shape=10,layer_type=Output,"
+                                    "output=10;optimization_fields:beta1=0.9+beta2=0.999+epsilon=1e-08\n"
                                     "```\n\n"
                                     "**Notes:**\n"
-                                    "- In the `Input` layer, `input` and `output` should both be set to the input "
-                                    "shape `(32,32,3)`.\n"
-                                    "- In the `Output` layer, `output_shape` should be set to the number of classes ("
-                                    "e.g., `10` for CIFAR-10).\n"
-                                    "- Ensure that all required fields are populated and no fields are left as `null`."
+                                    "- In the `Input` layer, both `input` and `output` must be set to the input shape (e.g., `(32,32,3)`).\n"
+                                    "- In the `Output` layer, `output_shape` should be set to the number of classes (e.g., `10` for CIFAR-10).\n"
+                                    "- Use the `dropout_rate` parameter inside layers (when applicable) to specify dropout.\n"
+                                    "- Ensure that no fields are left as `null`."
                                 )
                             },
                             {
@@ -110,12 +103,10 @@ def send_openai_request(request_json, model, focus, num):
                                     "**Primary Objective:**\n"
                                     f"- **Focus:** {focus}.\n\n"
                                     "**Secondary Instructions:**\n"
-                                    "- Unless told otherwise, attempt to generate new tests according to the "
-                                    "`reference_experiments` with small changes.\n"
-                                    "- All layers must have `input` and `output`.\n"
-                                    "- Use `based_on_id:0` if the experiment is brand-new, or `based_on_id:X` if "
-                                    "referencing an existing ID.\n"
-                                    "- No extra text or JSON.\n\n"
+                                    "- Attempt to generate new tests based on the `reference_experiments` with small changes.\n"
+                                    "- All layers must include `input` and `output` fields.\n"
+                                    "- Use `based_on_id:0` for brand-new experiments or `based_on_id:X` when referencing an existing ID.\n"
+                                    "- Do not include any extra text or JSON.\n\n"
                                     f"**Request:**\n{compact_request_json}"
                                 )
                             }
@@ -123,11 +114,10 @@ def send_openai_request(request_json, model, focus, num):
                     )
                     print("Request sent.")
 
-                    # Extract response text
                     response_text = response['choices'][0]['message']['content']
                     print("OpenAI Response:\n", response_text)
 
-                    # Parse line-by-line
+                    # Process each non-empty line from the response.
                     for line in response_text.split("\n"):
                         line = line.strip()
                         if not line:
@@ -152,49 +142,41 @@ def send_openai_request(request_json, model, focus, num):
 
 def json_to_compact(data: dict) -> str:
     """
-    Convert a JSON-like dictionary into the compact string format.
-    - Top-level fields: semicolons (e.g. based_on_id:..., loss_fn:..., ...).
-    - layers: each layer is comma-separated key=value, layers separated by '|'.
-    - layer_fields: plus-separated pairs.
-    - optimization_fields: plus-separated pairs.
+    Convert a JSON-like dictionary into a compact string format.
+    Top-level fields are output in a fixed order, and layers are represented
+    as a pipe-separated list of comma-separated key=value pairs.
+    Nested fields (e.g., layer_fields) are represented as plus-separated key=value pairs.
     """
     output_parts = []
-
-    # Ordered top-level fields (added "epochs" at the end)
+    # Fixed order for top-level fields.
     top_fields_order = [
-        "based_on_id",
-        "loss_fn",
-        "optimization",
-        "normalization",
-        "batch_size",
-        "weight_decay",
-        "learning_rate",
-        "epochs"
+        "based_on_id", "loss_fn", "optimization", "normalization", "batch_size",
+        "weight_decay", "learning_rate", "epochs", "min_delta", "patience"
     ]
-
-    # Add each top-level field if present
     for key in top_fields_order:
         if key in data:
             output_parts.append(f"{key}:{data[key]}")
 
-    # Handle layers
+    # Process layers.
     if "layers" in data and isinstance(data["layers"], list):
         layer_strs = []
         for layer in data["layers"]:
-            layer_items = []
-            for k, v in layer.items():
+            # Sort the layer keys for uniformity.
+            items = []
+            for k in sorted(layer.keys()):
+                v = layer[k]
                 if k == "layer_fields" and isinstance(v, dict):
-                    # plus-separated for subkeys
-                    plus_list = [f"{subk}={subv}" for subk, subv in v.items()]
-                    layer_items.append(f"layer_fields={'+'.join(plus_list)}")
+                    # Sort nested keys for consistency.
+                    subitems = [f"{subk}={v[subk]}" for subk in sorted(v.keys())]
+                    items.append(f"{k}={'+'.join(subitems)}")
                 else:
-                    layer_items.append(f"{k}={v}")
-            layer_strs.append(",".join(layer_items))
+                    items.append(f"{k}={v}")
+            layer_strs.append(",".join(items))
         output_parts.append(f"layers:{'|'.join(layer_strs)}")
 
-    # Handle optimization_fields
+    # Process optimization_fields.
     if "optimization_fields" in data and isinstance(data["optimization_fields"], dict):
-        opt_items = [f"{k}={v}" for k, v in data["optimization_fields"].items()]
+        opt_items = [f"{k}={data['optimization_fields'][k]}" for k in sorted(data["optimization_fields"].keys())]
         output_parts.append(f"optimization_fields:{'+'.join(opt_items)}")
 
     return ";".join(output_parts)
@@ -202,39 +184,28 @@ def json_to_compact(data: dict) -> str:
 
 def compact_to_json(compact_str: str) -> dict:
     """
-    Parse the compact string format back into a Python dict,
-    including the newly added 'epochs' field if present.
-
-    Example:
-      based_on_id:0;loss_fn:Cross Entropy;...;epochs:20;layers:layer_type=Input,input=(32,32,3),...
+    Parse the compact string format back into a Python dictionary.
+    Expected format: top-level fields separated by semicolons, with layers and
+    optimization_fields encoded as specified.
     """
     def parse_value(s: str):
         s = s.strip()
-        # Optionally turn "None" into actual None:
         if s.lower() == "none":
             return None
-        # Try integer:
         try:
             return int(s)
         except ValueError:
             pass
-        # Try float:
         try:
             return float(s)
         except ValueError:
             pass
-        # Fallback: keep string
         return s
 
     def split_on_commas_outside_parens(line: str):
-        """
-        Splits `line` by commas that are NOT inside parentheses.
-        E.g., "input=(32,32,3),output=(32,32,3)" -> ["input=(32,32,3)", "output=(32,32,3)"]
-        """
         result = []
         current = []
         paren_depth = 0
-
         for char in line:
             if char == '(':
                 paren_depth += 1
@@ -247,67 +218,46 @@ def compact_to_json(compact_str: str) -> dict:
                 current = []
             else:
                 current.append(char)
-
-        # Append any leftover piece
         if current:
             result.append("".join(current).strip())
-
         return result
 
     def remove_code_block_markers(s: str) -> str:
-        """
-        Removes code block markers (e.g., ```) from the string.
-        """
         return s.replace('```', '').strip()
 
-    # Step 1: Remove code block markers if present
     compact_str = remove_code_block_markers(compact_str)
-
     result = {}
-    # Split top-level by ';'
     top_fields = [fld.strip() for fld in compact_str.split(";") if fld.strip()]
-
     for fld in top_fields:
         if ":" not in fld:
             continue
         key, val = fld.split(":", 1)
         key = key.strip()
         val = val.strip()
-
         if key == "layers":
-            # e.g. "layer_type=Input,activation_fn=None, ... | layer_type=CNN, ..."
             layer_specs = val.split("|")
             layers_list = []
-
             for layer_str in layer_specs:
                 layer_dict = {}
                 sub_fields = split_on_commas_outside_parens(layer_str)
-
                 for sf in sub_fields:
                     if "=" not in sf:
                         continue
                     sub_key, sub_val = sf.split("=", 1)
                     sub_key = sub_key.strip()
                     sub_val = sub_val.strip()
-
                     if sub_key == "layer_fields":
-                        if sub_val:  # Ensure there are layer_fields to parse
-                            # plus-separated
-                            lf_dict = {}
+                        lf_dict = {}
+                        if sub_val:
                             for pair in sub_val.split("+"):
                                 if "=" in pair:
                                     pk, pv = pair.split("=", 1)
                                     lf_dict[pk.strip()] = parse_value(pv.strip())
-                            layer_dict["layer_fields"] = lf_dict
-                        else:
-                            layer_dict["layer_fields"] = {}
+                        layer_dict["layer_fields"] = lf_dict
                     else:
                         layer_dict[sub_key] = parse_value(sub_val)
-
                 layers_list.append(layer_dict)
-
             result["layers"] = layers_list
-
         elif key == "optimization_fields":
             opt_dict = {}
             for pair in val.split("+"):
@@ -315,15 +265,9 @@ def compact_to_json(compact_str: str) -> dict:
                     pk, pv = pair.split("=", 1)
                     opt_dict[pk.strip()] = parse_value(pv.strip())
             result[key] = opt_dict
-
         else:
-            # normal top-level (including epochs)
             result[key] = parse_value(val)
 
-    # Step 2: Check if the result is empty
     if not result:
         raise ValueError("Parsed result is empty. Please check the input format.")
-
-    #print("After parsing to json:", result)
     return result
-
