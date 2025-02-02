@@ -351,7 +351,7 @@ class DynamicModel(nn.Module):
                 if selected_init == 'he_normal':
                     # Determine nonlinearity based on activation function
                     if activation_fn.lower() == 'leakyrelu':
-                        nonlinearity = 'leakyrelu'
+                        nonlinearity = 'leaky_relu'
                     else:
                         nonlinearity = 'relu'
                     nn.init.kaiming_normal_(layer.weight, nonlinearity=nonlinearity)

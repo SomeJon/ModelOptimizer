@@ -1,16 +1,15 @@
 import json
 import torch
-from torch.utils.data import random_split
 import time
 from datetime import datetime
 from ModelRunner.DynamicModel import get_DynamicModel
-from ModelRunner.dataset_utils import get_split_sizes, get_data_loader
+from ModelRunner.dataset_utils import get_data_loader
 from ModelRunner.get_cifar_dataset import get_cifar10_datasets
 
 torch.manual_seed(0) # to make sure all tests are more or less the same...
 
 
-def train_model(test_config, train_dataset, test_dataset):
+def train_model(test_config, train_dataset, valid_dataset, test_dataset):
     """
     Trains the DynamicModel based on the provided test configuration and datasets.
 
@@ -49,17 +48,6 @@ def train_model(test_config, train_dataset, test_dataset):
     loss_fn_name = experiment.get('loss_fn', 'Cross Entropy Loss')
     min_delta = experiment.get('min_delta', None)
     patience = experiment.get('patience', None)
-
-    # Calculate dynamic split sizes
-    total_train_samples = len(train_dataset)  # Should be 50,000
-    train_size, valid_size = get_split_sizes(total_train_samples, 0.8)
-
-    # Split the training dataset into Training and Validation
-    train_dataset, valid_dataset = random_split(
-        train_dataset,
-        [train_size, valid_size],
-        generator=torch.Generator()
-    )
 
     train_loader = get_data_loader(
         train_dataset,
@@ -379,9 +367,9 @@ def run_tests(selected_tests, completed_tests):
 
         # Pass the entire test dictionary to train_model
         try:
-            train_dataset, test_dataset = get_cifar10_datasets(experiment_data.get('normalization', None))
+            train_dataset, valid_dataset, test_dataset = get_cifar10_datasets(experiment_data.get('normalization', None))
 
-            result_json = train_model(test, train_dataset, test_dataset)
+            result_json = train_model(test, train_dataset, valid_dataset, test_dataset)
             result = json.loads(result_json)
 
             # Check the status and handle accordingly
