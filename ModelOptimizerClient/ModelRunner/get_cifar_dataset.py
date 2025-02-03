@@ -1,6 +1,8 @@
 from torchvision import datasets, transforms
 from torch.utils.data import random_split
 
+USE_DATA_AUGMENTATION = True
+
 
 def get_cifar10_datasets(normalization='None', train_ratio=0.8):
     """
@@ -21,21 +23,26 @@ def get_cifar10_datasets(normalization='None', train_ratio=0.8):
     cifar10_std = (0.2023, 0.1994, 0.2010)
 
     # ---------------------------
-    # Define training augmentation transforms
-    # ---------------------------
-    train_transform_list = [
-        transforms.RandomCrop(32, padding=4),  # Random crop with padding
-        transforms.RandomHorizontalFlip(),      # Random horizontal flip
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  # Color augmentations
-        transforms.ToTensor(),
-    ]
-
-    # ---------------------------
     # Define basic transforms (no augmentation) for validation and testing
     # ---------------------------
     basic_transform_list = [
         transforms.ToTensor(),
     ]
+
+    if USE_DATA_AUGMENTATION:
+        # ---------------------------
+        # Define training augmentation transforms
+        # ---------------------------
+        train_transform_list = [
+            transforms.RandomCrop(32, padding=4),  # Random crop with padding
+            transforms.RandomHorizontalFlip(),      # Random horizontal flip
+            transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),  # Color augmentations
+            transforms.ToTensor(),
+        ]
+    else:
+        train_transform_list = [
+            transforms.ToTensor()
+        ]
 
     # ---------------------------
     # Apply normalization if requested
@@ -67,7 +74,6 @@ def get_cifar10_datasets(normalization='None', train_ratio=0.8):
         root='./data',
         train=True,
         download=True,
-        transform=train_transform
     )
 
     # Also download the test dataset (using basic transforms)
@@ -91,5 +97,5 @@ def get_cifar10_datasets(normalization='None', train_ratio=0.8):
     # WARNING: This change affects all instances referencing the underlying dataset,
     # so if you need to keep the training augmentation for training, consider downloading a separate instance.
     valid_dataset.dataset.transform = basic_transform
-
+    train_dataset.dataset.transform = train_transform
     return train_dataset, valid_dataset, test_dataset
